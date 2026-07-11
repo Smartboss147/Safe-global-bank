@@ -1,0 +1,6 @@
+{
+  "name": "Safe Global Bank",
+  "description": "A secure global banking web application with user authentication, account management, and transaction logging.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

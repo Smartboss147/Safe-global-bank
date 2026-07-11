@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and KYC information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "displayName": { "type": "string", "description": "User's name" },
+        "kycVerified": { "type": "boolean", "description": "KYC status" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "kycVerified"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Banking account",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner UID" },
+        "accountNumber": { "type": "string", "description": "Generated account number" },
+        "balance": { "type": "number", "description": "Current balance" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "accountNumber", "balance"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Banking transaction",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "User UID" },
+        "accountId": { "type": "string", "description": "Account ID" },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "transfer_in", "transfer_out"] },
+        "amount": { "type": "number" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "accountId", "type", "amount", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/accounts/{accountId}": {
+      "schema": "Account",
+      "description": "User accounts"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Transaction logs"
+    }
+  }
+}
