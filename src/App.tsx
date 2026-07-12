@@ -10,6 +10,7 @@ import Dashboard from './components/Dashboard';
 import LoginForm from './components/LoginForm';
 import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
+import UserProfile from './components/UserProfile';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -27,9 +28,12 @@ export default function App() {
         <nav className="p-4 bg-white shadow-sm flex justify-between items-center">
           <Link to="/" className="font-bold text-xl">Safe Global Bank</Link>
           <div className="flex gap-4 items-center">
-            {user && (
-              <Link to="/admin" className="text-gray-600 hover:text-gray-900 font-medium">Admin</Link>
+            {user && user.email === 'admin@example.com' && (
+              <Link to="/admin" className="text-gray-600 hover:text-gray-900 font-medium">Admin Panel</Link>
             )}
+            {user ? (
+              <Link to="/profile" className="text-gray-600 hover:text-gray-900 font-medium">Profile</Link>
+            ) : null}
             {user ? (
               <button onClick={() => signOut(auth)} className="text-red-600 font-medium">Sign Out</button>
             ) : (
@@ -41,6 +45,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={user ? <Dashboard user={user} /> : <LandingPage />} />
             <Route path="/admin" element={user ? <AdminDashboard user={user} /> : <LoginForm />} />
+            <Route path="/profile" element={user ? <UserProfile /> : <LoginForm />} />
             <Route path="/login" element={<LoginForm />} />
           </Routes>
         </main>
