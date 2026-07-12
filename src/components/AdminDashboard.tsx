@@ -130,16 +130,69 @@ export default function AdminDashboard({ user }: { user: any }) {
       )}
 
       {activeTab === 'compliance' && (
-        <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-          <h2 className="text-xl font-bold mb-4">Compliance & Fraud Detection</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 bg-red-50 border border-red-100 rounded-lg">
-              <h3 className="font-bold text-red-800">Suspicious Activities</h3>
-              <p className="text-3xl font-bold text-red-600 mt-2">0</p>
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
+            <h2 className="text-xl font-bold mb-4">Compliance & Fraud Detection</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div className="p-4 bg-red-50 border border-red-100 rounded-lg">
+                <h3 className="font-bold text-red-800">Suspicious Activities</h3>
+                <p className="text-3xl font-bold text-red-600 mt-2">3</p>
+              </div>
+              <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-lg">
+                <h3 className="font-bold text-yellow-800">High-Risk Transfers</h3>
+                <p className="text-3xl font-bold text-yellow-600 mt-2">5</p>
+              </div>
+              <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg">
+                <h3 className="font-bold text-blue-800">Pending KYC</h3>
+                <p className="text-3xl font-bold text-blue-600 mt-2">12</p>
+              </div>
             </div>
-            <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-lg">
-              <h3 className="font-bold text-yellow-800">High-Risk Transfers</h3>
-              <p className="text-3xl font-bold text-yellow-600 mt-2">0</p>
+            
+            <div className="border-t border-gray-100 pt-6">
+              <h3 className="font-bold text-lg mb-4">Flagged Transactions (AML/CFT Review)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="py-2">Alert ID</th>
+                      <th className="py-2">User / Entity</th>
+                      <th className="py-2">Risk Level</th>
+                      <th className="py-2">Reason</th>
+                      <th className="py-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b">
+                      <td className="py-3 font-mono text-xs">ALT-9921</td>
+                      <td className="py-3 text-sm">john.doe@example.com</td>
+                      <td className="py-3"><span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">High</span></td>
+                      <td className="py-3 text-sm">Multiple large international transfers</td>
+                      <td className="py-3 space-x-2">
+                        <button className="text-sm text-blue-600 font-semibold hover:underline">Investigate</button>
+                        <button className="text-sm text-red-600 font-semibold hover:underline">Freeze Account</button>
+                      </td>
+                    </tr>
+                    <tr className="border-b">
+                      <td className="py-3 font-mono text-xs">ALT-9922</td>
+                      <td className="py-3 text-sm">alice.smith@example.com</td>
+                      <td className="py-3"><span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold">Medium</span></td>
+                      <td className="py-3 text-sm">Unusual login location</td>
+                      <td className="py-3 space-x-2">
+                        <button className="text-sm text-blue-600 font-semibold hover:underline">Investigate</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
+            <h3 className="font-bold text-lg mb-4">Regulatory Reporting</h3>
+            <p className="text-sm text-gray-600 mb-4">Generate and submit compliance reports for regulatory bodies (e.g., FinCEN SARs, CTRs).</p>
+            <div className="flex gap-4">
+              <button className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 transition">Generate Suspicious Activity Report (SAR)</button>
+              <button className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold hover:bg-gray-50 transition">Generate Currency Transaction Report (CTR)</button>
             </div>
           </div>
         </div>

@@ -11,7 +11,10 @@ import Payments from './dashboard/Payments';
 import Savings from './dashboard/Savings';
 import Investments from './dashboard/Investments';
 import Loans from './dashboard/Loans';
-import { ArrowRightLeft, CreditCard, LayoutDashboard, Settings, ShieldCheck, Wallet, PieChart, Coins, Send, Receipt, Banknote, PiggyBank, Briefcase, HandCoins, HelpCircle, User } from 'lucide-react';
+import Settings from './dashboard/Settings';
+import SecurityCenter from './dashboard/SecurityCenter';
+import CustomerSupport from './dashboard/CustomerSupport';
+import { ArrowRightLeft, CreditCard, LayoutDashboard, Settings as SettingsIcon, ShieldCheck, Wallet, PieChart, Coins, Send, Receipt, Banknote, PiggyBank, Briefcase, HandCoins, HelpCircle, User } from 'lucide-react';
 
 export default function Dashboard({ user }: { user: any }) {
   const [account, setAccount] = useState<any>(null);
@@ -42,7 +45,7 @@ export default function Dashboard({ user }: { user: any }) {
     { id: 'investments', label: 'Investments', icon: <Briefcase size={20} /> },
     { id: 'loans', label: 'Loans', icon: <HandCoins size={20} /> },
     { id: 'security', label: 'Security Center', icon: <ShieldCheck size={20} /> },
-    { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
+    { id: 'settings', label: 'Settings', icon: <SettingsIcon size={20} /> },
     { id: 'support', label: 'Customer Support', icon: <HelpCircle size={20} /> },
   ];
 
@@ -179,36 +182,9 @@ export default function Dashboard({ user }: { user: any }) {
         {activeTab === 'investments' && <Investments />}
         {activeTab === 'loans' && <Loans />}
 
-        {/* Placeholders for other tabs */}
-        {activeTab === 'security' && (
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 min-h-[400px] flex flex-col items-center justify-center text-center">
-            <ShieldCheck size={48} className="text-gray-300 mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Security Center</h2>
-            <p className="text-gray-500 mb-6">Manage 2FA, API keys, login history, and trusted devices.</p>
-            <button className="p-3 bg-blue-900 text-white rounded-lg font-semibold hover:bg-blue-800">
-              Setup 2FA
-            </button>
-          </div>
-        )}
-
-        {activeTab === 'settings' && (
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 min-h-[400px] flex flex-col items-center justify-center text-center">
-            <Settings size={48} className="text-gray-300 mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Account Settings</h2>
-            <p className="text-gray-500 mb-6">Configure language, theme, and notification preferences.</p>
-          </div>
-        )}
-
-        {activeTab === 'support' && (
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 min-h-[400px] flex flex-col items-center justify-center text-center">
-            <HelpCircle size={48} className="text-gray-300 mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Customer Support</h2>
-            <p className="text-gray-500 mb-6">Access AI Chatbot, Live Chat, and FAQ.</p>
-            <button className="p-3 bg-blue-900 text-white rounded-lg font-semibold hover:bg-blue-800">
-              Start Live Chat
-            </button>
-          </div>
-        )}
+        {activeTab === 'security' && <SecurityCenter />}
+        {activeTab === 'settings' && <Settings />}
+        {activeTab === 'support' && <CustomerSupport />}
       </main>
     </div>
   );
