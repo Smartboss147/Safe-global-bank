@@ -40,14 +40,23 @@ export default function LoginForm() {
           <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
           <input type="password" required className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onChange={(e) => setPassword(e.target.value)} />
         </div>
+        <div className="flex justify-end mt-2">
+          <button type="button" className="text-sm text-blue-600 hover:underline" onClick={() => alert('Password reset feature coming soon!')}>Forgot Password?</button>
+        </div>
         <button type="submit" disabled={loading} className="w-full p-3 bg-blue-900 text-white rounded-lg font-semibold text-lg hover:bg-blue-800 transition disabled:bg-gray-400">
           {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Sign Up')}
         </button>
+        {isLogin && (
+          <button type="button" className="w-full p-3 border border-gray-300 rounded-lg font-semibold hover:bg-gray-50 transition" onClick={() => alert('Biometric login feature coming soon!')}>
+            Login with Biometrics (FaceID / Fingerprint)
+          </button>
+        )}
       </form>
-      <div className="mt-6 text-center">
+      <div className="mt-6 text-center space-y-2">
         <button type="button" className="text-blue-700 font-medium hover:underline" onClick={() => setIsLogin(!isLogin)}>
           {isLogin ? 'Need an account? Open an Account' : 'Have an account? Sign In'}
         </button>
+        <p className="text-xs text-gray-400">2FA and Email Verification are enforced for all accounts.</p>
       </div>
     </div>
   );
