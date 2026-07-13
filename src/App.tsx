@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -14,13 +14,20 @@ import UserProfile from './components/UserProfile';
 
 export default function App() {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      console.log('User loaded:', currentUser?.email);
       setUser(currentUser as any);
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center bg-gray-50"><p>Loading...</p></div>;
+  }
 
   return (
     <Router>
@@ -44,9 +51,9 @@ export default function App() {
         <main className="flex-grow p-4">
           <Routes>
             <Route path="/" element={user ? <Dashboard user={user} /> : <LandingPage />} />
-            <Route path="/admin" element={user ? <AdminDashboard user={user} /> : <LoginForm />} />
-            <Route path="/profile" element={user ? <UserProfile /> : <LoginForm />} />
-            <Route path="/login" element={<LoginForm />} />
+            <Route path="/admin" element={user ? <AdminDashboard user={user} /> : <Navigate to="/login" />} />
+            <Route path="/profile" element={user ? <UserProfile /> : <Navigate to="/login" />} />
+            <Route path="/login" element={user ? <Navigate to="/" /> : <LoginForm />} />
           </Routes>
         </main>
       </div>

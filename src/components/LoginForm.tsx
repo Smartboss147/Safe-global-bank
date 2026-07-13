@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { login, signup } from '../lib/auth';
+import { useNavigate } from 'react-router-dom';
 
 export default function LoginForm() {
   const [email, setEmail] = useState('');
@@ -8,18 +9,25 @@ export default function LoginForm() {
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
     setError('');
     setLoading(true);
+    console.log('Login started');
     try {
       if (isLogin) {
         await login(email, password);
+        console.log('Authentication successful');
       } else {
         await signup(email, password);
+        console.log('Authentication successful');
       }
+      console.log('Redirecting to dashboard');
+      navigate('/');
     } catch (error: any) {
+      console.error('Authentication failed with error:', error);
       setError(error.message);
     } finally {
       setLoading(false);
