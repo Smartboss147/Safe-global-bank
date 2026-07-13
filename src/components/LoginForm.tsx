@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { login, signup } from '../lib/auth';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Fingerprint, ChevronLeft, ChevronRight, CheckCircle2, User, Building, Landmark, Coins, Briefcase } from 'lucide-react';
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function LoginForm() {
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -31,6 +33,7 @@ export default function LoginForm() {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMsg('');
     setLoading(true);
     try {
       await login(loginEmail, loginPassword);
@@ -39,6 +42,21 @@ export default function LoginForm() {
       setError(err.message || 'Failed to login');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!loginEmail) {
+      setError('Please enter your email address first to reset your password.');
+      return;
+    }
+    setError('');
+    setSuccessMsg('');
+    try {
+      await sendPasswordResetEmail(auth, loginEmail);
+      setSuccessMsg('Password reset email sent. Please check your inbox.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to send password reset email.');
     }
   };
 
@@ -76,6 +94,8 @@ export default function LoginForm() {
            firstName: signupData.firstName,
            lastName: signupData.lastName,
            email: signupData.email,
+           phone: signupData.phone,
+           address: signupData.address,
            createdAt: serverTimestamp()
         });
       } catch (dbErr) {
@@ -116,6 +136,12 @@ export default function LoginForm() {
             {error}
           </div>
         )}
+        {successMsg && (
+          <div className="mb-6 p-4 bg-green-50/80 border border-green-100 rounded-xl text-green-700 text-sm font-medium flex items-center gap-2">
+            <CheckCircle2 size={16} />
+            {successMsg}
+          </div>
+        )}
 
         <form onSubmit={handleLoginSubmit} className="space-y-5">
           <div>
@@ -151,8 +177,12 @@ export default function LoginForm() {
             </div>
           </div>
 
-          <div className="flex justify-end">
-            <button type="button" className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition" onClick={() => alert('Password reset feature coming soon!')}>
+          <div className="flex justify-between items-center px-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+               <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+               <span className="text-sm font-medium text-gray-600">Remember Me</span>
+            </label>
+            <button type="button" className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition" onClick={handleForgotPassword}>
               Forgot Password?
             </button>
           </div>

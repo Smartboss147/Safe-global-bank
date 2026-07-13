@@ -19,7 +19,7 @@ import CustomerSupport from './dashboard/CustomerSupport';
 import { 
   Menu, Bell, Eye, EyeOff, Activity, CreditCard, LayoutGrid, 
   Send, Globe, Download, HandCoins, Receipt, HelpCircle, LogOut, 
-  ChevronLeft, Settings as SettingsIcon, Home, BarChart2, User, Wallet, History
+  ChevronLeft, Settings as SettingsIcon, Home, BarChart2, User, Wallet, History, X
 } from 'lucide-react';
 
 export default function Dashboard({ user }: { user: any }) {
@@ -29,6 +29,7 @@ export default function Dashboard({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [showBalance, setShowBalance] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -77,16 +78,16 @@ export default function Dashboard({ user }: { user: any }) {
     switch (activeTab) {
       case 'overview':
         return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} />;
-      case 'transfers': return <div className="p-4"><Transfers /></div>;
-      case 'crypto': return <div className="p-4"><CryptoWallet /></div>;
-      case 'payments': return <div className="p-4"><Payments /></div>;
-      case 'cards': return <div className="p-4"><Cards /></div>;
-      case 'savings': return <div className="p-4"><Savings /></div>;
-      case 'investments': return <div className="p-4"><Investments /></div>;
-      case 'loans': return <div className="p-4"><Loans /></div>;
-      case 'security': return <div className="p-4"><SecurityCenter /></div>;
-      case 'settings': return <div className="p-4"><Settings /></div>;
-      case 'support': return <div className="p-4"><CustomerSupport /></div>;
+      case 'transfers': return <div className="p-4"><Transfers user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'crypto': return <div className="p-4"><CryptoWallet user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'payments': return <div className="p-4"><Payments user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'cards': return <div className="p-4"><Cards user={user} account={account} /></div>;
+      case 'savings': return <div className="p-4"><Savings user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'investments': return <div className="p-4"><Investments user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'loans': return <div className="p-4"><Loans user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'security': return <div className="p-4"><SecurityCenter user={user} userData={userData} /></div>;
+      case 'settings': return <div className="p-4"><Settings user={user} userData={userData} fetchAccount={fetchAccount} /></div>;
+      case 'support': return <div className="p-4"><CustomerSupport user={user} /></div>;
       case 'stats': return <div className="p-4 space-y-6"><h2 className="text-2xl font-bold">Analytics</h2><SpendingChart /></div>;
       case 'history': return <div className="p-4"><TransactionHistory user={user} /></div>;
       default: return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} />;
@@ -107,15 +108,47 @@ export default function Dashboard({ user }: { user: any }) {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <button className="relative p-2 rounded-full hover:bg-gray-100 transition text-gray-700">
+          <button className="relative p-2 rounded-full hover:bg-gray-100 transition text-gray-700" onClick={() => setShowNotifications(true)}>
             <Bell size={22} />
             <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-gray-50"></span>
           </button>
           <button className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden border-2 border-white shadow-sm" onClick={() => handleAction('settings')}>
-            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Profile" className="w-full h-full object-cover" />
+            <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
           </button>
         </div>
       </header>
+
+      {/* Notifications Modal */}
+      <AnimatePresence>
+        {showNotifications && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60]" onClick={() => setShowNotifications(false)} />
+            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="fixed top-16 right-4 w-80 bg-white rounded-2xl shadow-2xl z-[70] border border-gray-100 overflow-hidden">
+               <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                  <h3 className="font-bold text-gray-900">Notifications</h3>
+                  <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+               </div>
+               <div className="max-h-80 overflow-y-auto">
+                  <div className="p-4 border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer">
+                     <p className="text-sm font-bold text-gray-900 mb-1">New Login Detected</p>
+                     <p className="text-xs text-gray-500">We noticed a new login from a Mac device in London.</p>
+                     <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">2 hours ago</p>
+                  </div>
+                  <div className="p-4 border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer">
+                     <p className="text-sm font-bold text-gray-900 mb-1">KYC Verification Completed</p>
+                     <p className="text-xs text-gray-500">Your identity documents have been approved. You are now Level 3 verified.</p>
+                     <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">Yesterday</p>
+                  </div>
+                  <div className="p-4 hover:bg-gray-50 transition cursor-pointer">
+                     <p className="text-sm font-bold text-gray-900 mb-1">Welcome to Safe Global</p>
+                     <p className="text-xs text-gray-500">Thanks for joining! Explore our digital banking features.</p>
+                     <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">2 days ago</p>
+                  </div>
+               </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Main Content Area */}
       <main className="relative z-10 h-full">
@@ -136,8 +169,8 @@ export default function Dashboard({ user }: { user: any }) {
               
               <div className="flex justify-between items-start mb-6 px-2">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-gray-100 overflow-hidden">
-                    <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Profile" className="w-full h-full object-cover" />
+                  <div className="w-12 h-12 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
+                    <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
                   </div>
                   <div>
                     <h3 className="font-bold text-gray-900">{userData ? `${userData.firstName} ${userData.lastName}` : 'User'}</h3>
