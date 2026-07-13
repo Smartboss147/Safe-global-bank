@@ -21,32 +21,39 @@ export default function App() {
         console.log('Auth state changed, user:', currentUser?.email);
         
         if (currentUser) {
-          try {
-            const userRef = doc(db, 'users', currentUser.uid);
-            const userSnap = await getDoc(userRef);
-            
-            if (!userSnap.exists()) {
-              console.log('User document does not exist, creating one for uid:', currentUser.uid);
-              await setDoc(userRef, {
-                uid: currentUser.uid,
-                email: currentUser.email || '',
-                displayName: currentUser.displayName || '',
-                role: 'user',
-                balance: 0,
-                createdAt: serverTimestamp(),
-                kycStatus: 'pending'
-              });
-              console.log('Successfully created user document in Firestore.');
-            } else {
-              console.log('User document already exists in Firestore for uid:', currentUser.uid);
+          // Instantly set the user and stop loading so the UI renders without blocking
+          setUser(currentUser as any);
+          setLoading(false);
+
+          // Perform the check and potential creation in the background
+          (async () => {
+            try {
+              const userRef = doc(db, 'users', currentUser.uid);
+              const userSnap = await getDoc(userRef);
+              
+              if (!userSnap.exists()) {
+                console.log('User document does not exist, creating one for uid:', currentUser.uid);
+                await setDoc(userRef, {
+                  uid: currentUser.uid,
+                  email: currentUser.email || '',
+                  displayName: currentUser.displayName || '',
+                  role: 'user',
+                  balance: 0,
+                  createdAt: serverTimestamp(),
+                  kycStatus: 'pending'
+                });
+                console.log('Successfully created user document in Firestore.');
+              } else {
+                console.log('User document already exists in Firestore for uid:', currentUser.uid);
+              }
+            } catch (docErr) {
+              console.error("Firestore error while checking or creating user doc:", docErr);
             }
-          } catch (docErr) {
-            console.error("Firestore error while checking or creating user doc:", docErr);
-          }
+          })();
+        } else {
+          setUser(null);
+          setLoading(false);
         }
-        
-        setUser(currentUser as any);
-        setLoading(false);
       }, (err) => {
         console.error('Auth listener error:', err);
         setError(err.message);
