@@ -46,6 +46,7 @@ export default function CryptoWallet({ user }: any) {
       const newWallet = {
         userId: user.uid,
         balances: SUPPORTED_COINS.reduce((acc: any, coin) => ({ ...acc, [coin.symbol]: 0 }), {}),
+        tradingBalance: 0,
         address: '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('')
       };
       const docRef = await addDoc(collection(db, 'crypto_wallets'), newWallet);
@@ -147,13 +148,15 @@ export default function CryptoWallet({ user }: any) {
     change: (Math.random() * 10 - 5).toFixed(2) // Simulated 24h change
   }));
 
-  const totalValue = activeAssets.reduce((sum, a) => sum + a.value, 0);
+  const cryptoValue = activeAssets.reduce((sum, a) => sum + a.value, 0);
+  const tradingBalance = wallet.tradingBalance || 0;
+  const totalValue = cryptoValue + tradingBalance;
 
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-br from-slate-900 to-slate-800 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
-        <p className="text-slate-400 text-sm font-medium uppercase tracking-wider relative z-10">Total Crypto Portfolio</p>
+        <p className="text-slate-400 text-sm font-medium uppercase tracking-wider relative z-10">Total Account Value</p>
         <p className="text-4xl mt-2 font-bold relative z-10">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         
         <div className="flex gap-4 mt-8 relative z-10">
@@ -187,7 +190,14 @@ export default function CryptoWallet({ user }: any) {
 
       {activeTab === 'portfolio' && (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Your Assets</h3>
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold text-gray-900">Trading Balance</h3>
+            <span className="text-xl font-bold text-gray-900">${tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          
+          <div className="w-full h-px bg-gray-100 mb-6" />
+
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Crypto Portfolio</h3>
           <div className="space-y-3">
             {activeAssets.map((asset) => (
               <div key={asset.symbol} className="flex justify-between items-center p-4 border border-gray-100 rounded-2xl hover:bg-gray-50 transition">
