@@ -35,9 +35,23 @@ export default function LoginForm({ user }: { user?: any }) {
 
   // Handle existing user
   useEffect(() => {
-    if (user && !requires2FA) {
-      navigate('/');
+    async function checkRole() {
+      if (user && !requires2FA) {
+        try {
+          const { doc, getDoc } = await import('firebase/firestore');
+          const { db } = await import('../lib/firebase');
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          if (userDoc.exists() && userDoc.data().role === 'admin') {
+            navigate('/admin');
+          } else {
+            navigate('/');
+          }
+        } catch (err) {
+          navigate('/');
+        }
+      }
     }
+    checkRole();
   }, [user, requires2FA, navigate]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -61,7 +75,7 @@ export default function LoginForm({ user }: { user?: any }) {
       setError('Please enter a valid 6-digit PIN');
       return;
     }
-    navigate('/');
+    setRequires2FA(false);
   };
 
   const handleForgotPassword = async () => {

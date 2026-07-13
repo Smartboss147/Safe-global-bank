@@ -6,6 +6,8 @@ import Dashboard from './components/Dashboard';
 import LoginForm from './components/LoginForm';
 import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
+import AdminRoute from './components/AdminRoute';
+import AdminLogin from './components/AdminLogin';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -61,7 +63,8 @@ export default function App() {
         <main className={`flex-grow ${!user ? 'p-4' : 'p-0 pb-20'}`}>
           <Routes>
             <Route path="/" element={user ? <Dashboard user={user} /> : <LandingPage />} />
-            <Route path="/admin" element={user ? <AdminDashboard user={user} /> : <Navigate to="/login" />} />
+            <Route path="/admin" element={<AdminRoute user={user}><AdminDashboard user={user} /></AdminRoute>} />
+            <Route path="/admin-login" element={<AdminLogin user={user} />} />
             <Route path="/login" element={<LoginForm user={user} />} />
           </Routes>
         </main>

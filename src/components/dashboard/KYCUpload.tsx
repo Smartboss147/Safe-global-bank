@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { db } from '../../lib/firebase';
 import { doc, updateDoc, serverTimestamp, setDoc, collection, addDoc } from 'firebase/firestore';
 import { UploadCloud, CheckCircle, FileText, AlertCircle } from 'lucide-react';

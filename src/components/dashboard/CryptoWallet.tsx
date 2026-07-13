@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { ArrowDownLeft, ArrowUpRight, Copy, QrCode, ChevronDown, CheckCircle, XCircle } from 'lucide-react';
