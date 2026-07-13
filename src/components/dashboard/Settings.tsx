@@ -9,7 +9,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
   const [isEditing, setIsEditing] = useState(false);
   const [showKyc, setShowKyc] = useState(false);
   const [formData, setFormData] = useState({
-    firstName: '', lastName: '', phone: '', address: ''
+    firstName: '', lastName: '', phone: '', address: '', displayName: ''
   });
   const [loading, setLoading] = useState(false);
 
@@ -19,10 +19,35 @@ export default function Settings({ user, userData, fetchAccount }: any) {
         firstName: userData.firstName || '',
         lastName: userData.lastName || '',
         phone: userData.phone || '',
-        address: userData.address || ''
+        address: userData.address || '',
+        displayName: userData.displayName || ''
       });
     }
   }, [userData]);
+
+  const getFormattedDate = (timestamp: any) => {
+    if (!timestamp) return 'N/A';
+    try {
+      let date: Date;
+      if (timestamp.toDate && typeof timestamp.toDate === 'function') {
+        date = timestamp.toDate();
+      } else if (timestamp.seconds) {
+        date = new Date(timestamp.seconds * 1000);
+      } else if (timestamp instanceof Date) {
+        date = timestamp;
+      } else {
+        date = new Date(timestamp);
+      }
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (err) {
+      console.error("Error formatting date:", err);
+      return 'N/A';
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!userData || !userData.uid) return;
@@ -61,7 +86,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
         <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
         <div className="w-24 h-24 mx-auto rounded-full bg-white/10 p-1 mb-4 relative z-10 group cursor-pointer">
           <div className="w-full h-full rounded-full overflow-hidden border-2 border-white relative">
-            <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
+            <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.displayName || userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                <Camera className="text-white" size={24} />
             </div>
@@ -76,7 +101,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
             </button>
           )}
         </div>
-        <h2 className="text-2xl font-bold text-white relative z-10">{userData?.firstName} {userData?.lastName}</h2>
+        <h2 className="text-2xl font-bold text-white relative z-10">{userData?.displayName || `${userData?.firstName} ${userData?.lastName}`}</h2>
         <p className="text-white/70 text-sm mb-4 relative z-10">{user?.email}</p>
         
         <div 
@@ -103,6 +128,10 @@ export default function Settings({ user, userData, fetchAccount }: any) {
           <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-6">
             {isEditing ? (
               <div className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 mb-1">Display Name</label>
+                  <input type="text" className="w-full p-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#0A3D36]" value={formData.displayName} onChange={e => setFormData({...formData, displayName: e.target.value})} placeholder="e.g. John Doe" />
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-gray-500 mb-1">First Name</label>
@@ -134,6 +163,10 @@ export default function Settings({ user, userData, fetchAccount }: any) {
             ) : (
               <div className="space-y-4">
                 <div className="flex justify-between border-b border-gray-100 pb-3">
+                  <span className="text-gray-500 text-sm">Display Name</span>
+                  <span className="font-semibold text-gray-900">{userData?.displayName || 'Not set'}</span>
+                </div>
+                <div className="flex justify-between border-b border-gray-100 pb-3">
                   <span className="text-gray-500 text-sm">Full Name</span>
                   <span className="font-semibold text-gray-900">{userData?.firstName} {userData?.lastName}</span>
                 </div>
@@ -145,9 +178,21 @@ export default function Settings({ user, userData, fetchAccount }: any) {
                   <span className="text-gray-500 text-sm">Address</span>
                   <span className="font-semibold text-gray-900 text-right max-w-[60%]">{userData?.address || 'Not set'}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between border-b border-gray-100 pb-3">
                   <span className="text-gray-500 text-sm">Date of Birth</span>
                   <span className="font-semibold text-gray-900">May 14, 1988</span>
+                </div>
+                <div className="flex justify-between border-b border-gray-100 pb-3">
+                  <span className="text-gray-500 text-sm">Account Created</span>
+                  <span className="font-semibold text-gray-900">{getFormattedDate(userData?.createdAt)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500 text-sm">KYC Status</span>
+                  <span className={`font-semibold capitalize px-2.5 py-0.5 rounded-full text-xs ${
+                    kycStatus.toLowerCase() === 'verified' ? 'bg-green-100 text-green-800' :
+                    kycStatus.toLowerCase() === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>{kycStatus}</span>
                 </div>
               </div>
             )}
