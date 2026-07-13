@@ -30,6 +30,9 @@ export default function LoginForm() {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showConfirmSignupPassword, setShowConfirmSignupPassword] = useState(false);
 
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [pin2FA, setPin2FA] = useState('');
+
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -37,12 +40,21 @@ export default function LoginForm() {
     setLoading(true);
     try {
       await login(loginEmail, loginPassword);
-      navigate('/');
+      setRequires2FA(true);
     } catch (err: any) {
       setError(err.message || 'Failed to login');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handle2FASubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pin2FA.length !== 6) {
+      setError('Please enter a valid 6-digit PIN');
+      return;
+    }
+    navigate('/');
   };
 
   const handleForgotPassword = async () => {
@@ -122,107 +134,159 @@ export default function LoginForm() {
   const renderLogin = () => (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="w-full max-w-md mx-auto">
       <div className="bg-white/80 backdrop-blur-xl p-8 rounded-[2rem] shadow-2xl border border-white/50">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-900 to-blue-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
-            <Landmark className="text-white w-8 h-8" />
-          </div>
-          <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Welcome Back</h2>
-          <p className="text-gray-500 mt-2 font-medium">Securely access your digital banking</p>
-        </div>
+        
+        {requires2FA ? (
+          <>
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-900 to-blue-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
+                <Fingerprint className="text-white w-8 h-8" />
+              </div>
+              <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Two-Factor Auth</h2>
+              <p className="text-gray-500 mt-2 font-medium">Enter the 6-digit code from your authenticator app</p>
+            </div>
 
-        {error && (
-          <div className="mb-6 p-4 bg-red-50/80 border border-red-100 rounded-xl text-red-600 text-sm font-medium flex items-center gap-2">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
-            {error}
-          </div>
-        )}
-        {successMsg && (
-          <div className="mb-6 p-4 bg-green-50/80 border border-green-100 rounded-xl text-green-700 text-sm font-medium flex items-center gap-2">
-            <CheckCircle2 size={16} />
-            {successMsg}
-          </div>
-        )}
+            {error && (
+              <div className="mb-6 p-4 bg-red-50/80 border border-red-100 rounded-xl text-red-600 text-sm font-medium flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                {error}
+              </div>
+            )}
 
-        <form onSubmit={handleLoginSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">Email Address</label>
-            <input
-              type="email"
-              required
-              className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-gray-900 outline-none"
-              placeholder="name@example.com"
-              value={loginEmail}
-              onChange={(e) => setLoginEmail(e.target.value)}
-            />
-          </div>
-          
-          <div>
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">Password</label>
-            <div className="relative">
-              <input
-                type={showLoginPassword ? 'text' : 'password'}
-                required
-                className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-gray-900 outline-none pr-12"
-                placeholder="••••••••"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-              />
+            <form onSubmit={handle2FASubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">Authenticator Code</label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  required
+                  className="w-full p-4 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-bold text-center tracking-[0.5em] text-2xl text-gray-900 outline-none"
+                  placeholder="000000"
+                  value={pin2FA}
+                  onChange={(e) => setPin2FA(e.target.value.replace(/\D/g, ''))}
+                />
+              </div>
+
+              <button
+                type="submit"
+                className="w-full p-4 bg-gradient-to-r from-blue-900 to-blue-700 text-white rounded-xl font-bold text-lg hover:shadow-lg hover:shadow-blue-900/30 transition-all active:scale-[0.98] flex justify-center items-center"
+              >
+                Verify Code
+              </button>
+              
               <button
                 type="button"
-                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
-                onClick={() => setShowLoginPassword(!showLoginPassword)}
+                className="w-full p-4 bg-white border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98]"
+                onClick={() => { setRequires2FA(false); auth.signOut(); }}
               >
-                {showLoginPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                Cancel
               </button>
+            </form>
+          </>
+        ) : (
+          <>
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-gradient-to-br from-blue-900 to-blue-600 rounded-2xl mx-auto flex items-center justify-center mb-4 shadow-lg shadow-blue-900/20">
+                <Landmark className="text-white w-8 h-8" />
+              </div>
+              <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Welcome Back</h2>
+              <p className="text-gray-500 mt-2 font-medium">Securely access your digital banking</p>
             </div>
-          </div>
 
-          <div className="flex justify-between items-center px-1">
-            <label className="flex items-center gap-2 cursor-pointer">
-               <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-               <span className="text-sm font-medium text-gray-600">Remember Me</span>
-            </label>
-            <button type="button" className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition" onClick={handleForgotPassword}>
-              Forgot Password?
-            </button>
-          </div>
+            {error && (
+              <div className="mb-6 p-4 bg-red-50/80 border border-red-100 rounded-xl text-red-600 text-sm font-medium flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                {error}
+              </div>
+            )}
+            {successMsg && (
+              <div className="mb-6 p-4 bg-green-50/80 border border-green-100 rounded-xl text-green-700 text-sm font-medium flex items-center gap-2">
+                <CheckCircle2 size={16} />
+                {successMsg}
+              </div>
+            )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full p-4 bg-gradient-to-r from-blue-900 to-blue-700 text-white rounded-xl font-bold text-lg hover:shadow-lg hover:shadow-blue-900/30 transition-all active:scale-[0.98] disabled:opacity-70 flex justify-center items-center"
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Authenticating...
-              </span>
-            ) : 'Sign In'}
-          </button>
+            <form onSubmit={handleLoginSubmit} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-gray-900 outline-none"
+                  placeholder="name@example.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">Password</label>
+                <div className="relative">
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    required
+                    className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-gray-900 outline-none pr-12"
+                    placeholder="••••••••"
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                  >
+                    {showLoginPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                  </button>
+                </div>
+              </div>
 
-          <div className="relative py-4">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
-            <div className="relative flex justify-center"><span className="bg-white px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Or continue with</span></div>
-          </div>
+              <div className="flex justify-between items-center px-1">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                  <span className="text-sm font-medium text-gray-600">Remember Me</span>
+                </label>
+                <button type="button" className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition" onClick={handleForgotPassword}>
+                  Forgot Password?
+                </button>
+              </div>
 
-          <button
-            type="button"
-            className="w-full p-4 bg-white border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm"
-            onClick={() => alert('Biometric login feature coming soon!')}
-          >
-            <Fingerprint size={20} className="text-blue-600" />
-            Login with Biometrics
-          </button>
-        </form>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full p-4 bg-gradient-to-r from-blue-900 to-blue-700 text-white rounded-xl font-bold text-lg hover:shadow-lg hover:shadow-blue-900/30 transition-all active:scale-[0.98] disabled:opacity-70 flex justify-center items-center"
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Authenticating...
+                  </span>
+                ) : 'Sign In'}
+              </button>
 
-        <div className="mt-8 text-center">
-          <p className="text-gray-500 font-medium">
-            Don't have an account?{' '}
-            <button type="button" className="text-blue-600 font-bold hover:underline" onClick={() => setIsLogin(false)}>
-              Open an Account
-            </button>
-          </p>
-        </div>
+              <div className="relative py-4">
+                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200" /></div>
+                <div className="relative flex justify-center"><span className="bg-white px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Or continue with</span></div>
+              </div>
+
+              <button
+                type="button"
+                className="w-full p-4 bg-white border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm"
+                onClick={() => alert('Biometric login feature coming soon!')}
+              >
+                <Fingerprint size={20} className="text-blue-600" />
+                Login with Biometrics
+              </button>
+            </form>
+
+            <div className="mt-8 text-center">
+              <p className="text-gray-500 font-medium">
+                Don't have an account?{' '}
+                <button type="button" className="text-blue-600 font-bold hover:underline" onClick={() => setIsLogin(false)}>
+                  Open an Account
+                </button>
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </motion.div>
   );

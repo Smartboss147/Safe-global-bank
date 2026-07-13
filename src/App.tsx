@@ -10,7 +10,6 @@ import Dashboard from './components/Dashboard';
 import LoginForm from './components/LoginForm';
 import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
-import UserProfile from './components/UserProfile';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -44,7 +43,6 @@ export default function App() {
           <Routes>
             <Route path="/" element={user ? <Dashboard user={user} /> : <LandingPage />} />
             <Route path="/admin" element={user ? <AdminDashboard user={user} /> : <Navigate to="/login" />} />
-            <Route path="/profile" element={user ? <UserProfile /> : <Navigate to="/login" />} />
             <Route path="/login" element={user ? <Navigate to="/" /> : <LoginForm />} />
           </Routes>
         </main>
