@@ -1,7 +1,8 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { auth } from './lib/firebase';
+import { auth, db } from './lib/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Dashboard from './components/Dashboard';
 import LoginForm from './components/LoginForm';
 import LandingPage from './components/LandingPage';
@@ -16,8 +17,29 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
         console.log('User loaded:', currentUser?.email);
+        
+        if (currentUser) {
+          try {
+            const userRef = doc(db, 'users', currentUser.uid);
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) {
+              await setDoc(userRef, {
+                uid: currentUser.uid,
+                email: currentUser.email,
+                displayName: currentUser.displayName || '',
+                role: 'user',
+                balance: 0,
+                createdAt: serverTimestamp(),
+                kycStatus: 'pending'
+              });
+            }
+          } catch (docErr) {
+            console.error("Error checking/creating user doc:", docErr);
+          }
+        }
+        
         setUser(currentUser as any);
         setLoading(false);
       }, (err) => {
@@ -25,6 +47,7 @@ export default function App() {
         setError(err.message);
         setLoading(false);
       });
+
       return () => unsubscribe();
     } catch (err: any) {
       console.error('Setup error:', err);

@@ -3,7 +3,7 @@ import { login, signup } from '../lib/auth';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Fingerprint, ChevronLeft, ChevronRight, CheckCircle2, User, Building, Landmark, Coins, Briefcase } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -122,15 +122,19 @@ export default function LoginForm({ user }: { user?: any }) {
           status: 'active',
           createdAt: serverTimestamp()
         });
-        await addDoc(collection(db, 'users'), {
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
            uid: userCredential.user.uid,
            firstName: signupData.firstName,
            lastName: signupData.lastName,
+           displayName: `${signupData.firstName} ${signupData.lastName}`,
            email: signupData.email,
            phone: signupData.phone,
            address: signupData.address,
+           role: 'user',
+           balance: 0,
+           kycStatus: 'pending',
            createdAt: serverTimestamp()
-        });
+        }, { merge: true });
       } catch (dbErr) {
         console.error('Error creating user profile/account docs:', dbErr);
       }

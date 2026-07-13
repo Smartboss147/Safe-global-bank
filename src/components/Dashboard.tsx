@@ -61,11 +61,11 @@ export default function Dashboard({ user }: { user: any }) {
       setAccount({ id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() });
     }
     
-    // Fetch user profile info if available
-    const uq = query(collection(db, 'users'), where('uid', '==', user.uid));
-    const uSnap = await getDocs(uq);
-    if (!uSnap.empty) {
-      setUserData(uSnap.docs[0].data());
+    // Fetch user profile info
+    const userRef = doc(db, 'users', user.uid);
+    const userSnap = await getDoc(userRef);
+    if (userSnap.exists()) {
+      setUserData(userSnap.data());
     }
   };
 
