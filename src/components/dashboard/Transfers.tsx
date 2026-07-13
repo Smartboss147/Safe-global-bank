@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { db } from '../../lib/firebase';
 import { collection, addDoc, doc, updateDoc, increment, serverTimestamp, getDocs, query, where, runTransaction } from 'firebase/firestore';
-import { CheckCircle, XCircle, Download } from 'lucide-react';
+import { CheckCircle, XCircle, Download, AlertTriangle } from 'lucide-react';
 
 export default function Transfers({ user, account, fetchAccount }: any) {
   const [transferType, setTransferType] = useState('internal');
@@ -17,17 +17,16 @@ export default function Transfers({ user, account, fetchAccount }: any) {
   const [status, setStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [receiptData, setReceiptData] = useState<any>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
-    setLoading(true);
     setStatus('idle');
     setReceiptData(null);
     
     if (!account) {
       setStatus('error');
       setMessage('Account not found.');
-      setLoading(false);
       return;
     }
 
@@ -35,16 +34,26 @@ export default function Transfers({ user, account, fetchAccount }: any) {
     if (isNaN(val) || val <= 0) {
       setStatus('error');
       setMessage('Invalid amount.');
-      setLoading(false);
       return;
     }
 
     if (account.balance < val) {
       setStatus('error');
       setMessage('Insufficient funds.');
-      setLoading(false);
       return;
     }
+
+    // Trigger confirmation modal
+    setShowConfirmModal(true);
+  };
+
+  const confirmAndProcessTransfer = async () => {
+    setShowConfirmModal(false);
+    setLoading(true);
+    setStatus('idle');
+    setReceiptData(null);
+
+    const val = parseFloat(amount);
 
     try {
       let txDescription = reference || `${transferType} transfer to ${recipient}`;
@@ -369,6 +378,88 @@ export default function Transfers({ user, account, fetchAccount }: any) {
                 className="w-full px-6 py-3 bg-blue-900 text-white font-bold rounded-xl hover:bg-blue-800 transition shadow-sm"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl max-w-md w-full flex flex-col items-center transform transition-all">
+            <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center mb-4">
+              <AlertTriangle className="text-amber-500 w-10 h-10" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-2 text-center">Confirm Transfer</h2>
+            <p className="text-gray-500 mb-6 text-center text-sm">
+              Please double check the transaction details before confirming. This transfer cannot be undone.
+            </p>
+            
+            <div className="w-full bg-gray-50 p-6 rounded-2xl space-y-3 text-sm border border-gray-100 mb-6">
+              <div className="flex justify-between border-b border-gray-200 pb-3">
+                <span className="text-gray-500">Transfer Type</span>
+                <span className="font-medium text-gray-900 capitalize">{transferType}</span>
+              </div>
+              
+              <div className="flex justify-between border-b border-gray-200 pb-3">
+                <span className="text-gray-500">
+                  {transferType === 'email' ? 'Recipient Email' : 'Recipient Account'}
+                </span>
+                <span className="font-medium text-gray-900 text-right truncate max-w-[200px]" title={recipient}>
+                  {recipient}
+                </span>
+              </div>
+
+              {bankName && (
+                <div className="flex justify-between border-b border-gray-200 pb-3">
+                  <span className="text-gray-500">Bank</span>
+                  <span className="font-medium text-gray-900">{bankName}</span>
+                </div>
+              )}
+
+              {swiftCode && (
+                <div className="flex justify-between border-b border-gray-200 pb-3">
+                  <span className="text-gray-500">SWIFT / BIC Code</span>
+                  <span className="font-mono text-gray-900">{swiftCode}</span>
+                </div>
+              )}
+
+              {transferType === 'scheduled' && scheduleDate && (
+                <div className="flex justify-between border-b border-gray-200 pb-3">
+                  <span className="text-gray-500">Scheduled Date</span>
+                  <span className="font-medium text-gray-900">{scheduleDate}</span>
+                </div>
+              )}
+
+              {reference && (
+                <div className="flex justify-between border-b border-gray-200 pb-3">
+                  <span className="text-gray-500">Reference</span>
+                  <span className="font-medium text-gray-900 truncate max-w-[200px]" title={reference}>
+                    {reference}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex justify-between pt-2">
+                <span className="text-gray-500 font-medium text-base">Amount</span>
+                <span className="font-bold text-gray-900 text-lg">${Number(amount).toFixed(2)}</span>
+              </div>
+            </div>
+            
+            <div className="flex gap-3 w-full">
+              <button 
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="flex-1 px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition shadow-sm"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                onClick={confirmAndProcessTransfer}
+                className="flex-1 px-6 py-3 bg-blue-900 text-white font-bold rounded-xl hover:bg-blue-800 transition shadow-sm"
+              >
+                Confirm & Pay
               </button>
             </div>
           </div>
