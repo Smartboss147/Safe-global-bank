@@ -1,11 +1,7 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { auth } from './lib/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import Dashboard from './components/Dashboard';
 import LoginForm from './components/LoginForm';
 import LandingPage from './components/LandingPage';
@@ -14,18 +10,41 @@ import AdminDashboard from './components/AdminDashboard';
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      console.log('User loaded:', currentUser?.email);
-      setUser(currentUser as any);
+    try {
+      const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+        console.log('User loaded:', currentUser?.email);
+        setUser(currentUser as any);
+        setLoading(false);
+      }, (err) => {
+        console.error('Auth error:', err);
+        setError(err.message);
+        setLoading(false);
+      });
+      return () => unsubscribe();
+    } catch (err: any) {
+      console.error('Setup error:', err);
+      setError(err.message);
       setLoading(false);
-    });
-    return () => unsubscribe();
+    }
   }, []);
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50"><p>Loading...</p></div>;
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4 text-center">
+        <div className="bg-red-50 text-red-600 p-6 rounded-xl max-w-md w-full border border-red-100">
+          <h2 className="font-bold text-xl mb-2">Configuration Error</h2>
+          <p className="mb-4 text-sm">{error}</p>
+          <p className="text-xs text-red-500">If you are on Vercel, make sure you have added your Firebase environment variables in the project settings.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -43,7 +62,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={user ? <Dashboard user={user} /> : <LandingPage />} />
             <Route path="/admin" element={user ? <AdminDashboard user={user} /> : <Navigate to="/login" />} />
-            <Route path="/login" element={user ? <Navigate to="/" /> : <LoginForm />} />
+            <Route path="/login" element={<LoginForm user={user} />} />
           </Routes>
         </main>
       </div>

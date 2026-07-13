@@ -1,13 +1,13 @@
-import { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { login, signup } from '../lib/auth';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Fingerprint, ChevronLeft, ChevronRight, CheckCircle2, User, Building, Landmark, Coins, Briefcase } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { sendPasswordResetEmail } from 'firebase/auth';
+import { sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
-export default function LoginForm() {
+export default function LoginForm({ user }: { user?: any }) {
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -32,6 +32,13 @@ export default function LoginForm() {
 
   const [requires2FA, setRequires2FA] = useState(false);
   const [pin2FA, setPin2FA] = useState('');
+
+  // Handle existing user
+  useEffect(() => {
+    if (user && !requires2FA) {
+      navigate('/');
+    }
+  }, [user, requires2FA, navigate]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -176,7 +183,7 @@ export default function LoginForm() {
               <button
                 type="button"
                 className="w-full p-4 bg-white border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 hover:border-gray-300 transition-all active:scale-[0.98]"
-                onClick={() => { setRequires2FA(false); auth.signOut(); }}
+                onClick={() => { setRequires2FA(false); signOut(auth); }}
               >
                 Cancel
               </button>
