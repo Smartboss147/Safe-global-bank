@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { ArrowDownLeft, ArrowUpRight, Search, Filter, Download, FileText } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function TransactionHistory({ user }: any) {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -23,12 +25,49 @@ export default function TransactionHistory({ user }: any) {
 
   const filtered = transactions.filter(t => t.description?.toLowerCase().includes(searchTerm.toLowerCase()) || t.type.toLowerCase().includes(searchTerm.toLowerCase()));
 
-  const handleDownloadStatement = () => {
+  const handleDownloadStatement = (monthName: string, monthIndex: number, year: number) => {
     setDownloading(true);
-    setTimeout(() => {
-      alert("Statement PDF generated successfully! Check your downloads folder.");
+    try {
+      const doc = new jsPDF();
+      
+      const statementTransactions = transactions.filter(t => {
+        if (!t.createdAt || !t.createdAt.toDate) return false;
+        const date = t.createdAt.toDate();
+        return date.getMonth() === monthIndex && date.getFullYear() === year;
+      });
+
+      doc.setFontSize(20);
+      doc.text(`Monthly Statement - ${monthName} ${year}`, 14, 22);
+      
+      doc.setFontSize(11);
+      doc.text(`Account statement for the period.`, 14, 30);
+      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 36);
+
+      if (statementTransactions.length === 0) {
+        doc.text("No transactions found for this period.", 14, 46);
+      } else {
+        const tableData = statementTransactions.map(t => [
+          t.createdAt.toDate().toLocaleDateString(),
+          t.description || 'Transaction',
+          t.type.toUpperCase(),
+          `${t.type === 'deposit' ? '+' : '-'}$${Number(t.amount).toFixed(2)}`
+        ]);
+
+        autoTable(doc, {
+          startY: 46,
+          head: [['Date', 'Description', 'Type', 'Amount']],
+          body: tableData,
+          headStyles: { fillColor: [30, 58, 138] } // text-blue-900 approx
+        });
+      }
+
+      doc.save(`Statement_${monthName}_${year}.pdf`);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
       setDownloading(false);
-    }, 1500);
+    }
   };
 
   return (
@@ -37,7 +76,7 @@ export default function TransactionHistory({ user }: any) {
         <h2 className="text-xl font-bold text-gray-900">Statements & History</h2>
         <div className="flex gap-2">
           <button className="p-2 bg-gray-50 text-gray-600 rounded-full hover:bg-gray-100"><Filter size={18} /></button>
-          <button onClick={handleDownloadStatement} disabled={downloading} className={`p-2 rounded-full flex items-center gap-2 ${downloading ? 'bg-blue-100 text-blue-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
+          <button onClick={() => handleDownloadStatement('All', new Date().getMonth(), new Date().getFullYear())} disabled={downloading} className={`p-2 rounded-full flex items-center gap-2 ${downloading ? 'bg-blue-100 text-blue-400' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
             <Download size={18} />
           </button>
         </div>
@@ -45,25 +84,25 @@ export default function TransactionHistory({ user }: any) {
       
       {/* Quick Statements Panel */}
       <div className="flex gap-3 mb-6 overflow-x-auto pb-2 hide-scrollbar">
-        <button onClick={handleDownloadStatement} className="flex-shrink-0 flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition w-48">
+        <button onClick={() => handleDownloadStatement('July', 6, 2026)} className="flex-shrink-0 flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition w-48">
           <div className="p-2 bg-red-50 text-red-500 rounded-lg"><FileText size={20} /></div>
           <div className="text-left">
             <p className="font-bold text-sm text-gray-900">July 2026</p>
-            <p className="text-xs text-gray-500">PDF • 120KB</p>
+            <p className="text-xs text-gray-500">PDF Document</p>
           </div>
         </button>
-        <button onClick={handleDownloadStatement} className="flex-shrink-0 flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition w-48">
+        <button onClick={() => handleDownloadStatement('June', 5, 2026)} className="flex-shrink-0 flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition w-48">
           <div className="p-2 bg-red-50 text-red-500 rounded-lg"><FileText size={20} /></div>
           <div className="text-left">
             <p className="font-bold text-sm text-gray-900">June 2026</p>
-            <p className="text-xs text-gray-500">PDF • 115KB</p>
+            <p className="text-xs text-gray-500">PDF Document</p>
           </div>
         </button>
-        <button onClick={handleDownloadStatement} className="flex-shrink-0 flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition w-48">
+        <button onClick={() => handleDownloadStatement('May', 4, 2026)} className="flex-shrink-0 flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:bg-gray-50 transition w-48">
           <div className="p-2 bg-red-50 text-red-500 rounded-lg"><FileText size={20} /></div>
           <div className="text-left">
             <p className="font-bold text-sm text-gray-900">May 2026</p>
-            <p className="text-xs text-gray-500">PDF • 132KB</p>
+            <p className="text-xs text-gray-500">PDF Document</p>
           </div>
         </button>
       </div>

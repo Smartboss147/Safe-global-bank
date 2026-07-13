@@ -3,16 +3,24 @@ import { db } from '../lib/firebase';
 import { collection, addDoc, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 
-export default function TransactionForm({ user, accountId, type, onSuccess }: any) {
+export default function TransactionForm({ user, accountId, type, onSuccess, currentBalance }: any) {
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
     const val = parseFloat(amount);
     
+    if (type === 'withdrawal' && currentBalance !== undefined && val > currentBalance) {
+      setError('Insufficient funds.');
+      setLoading(false);
+      return;
+    }
+
     // Create transaction
     await addDoc(collection(db, 'transactions'), {
       userId: user.uid,
@@ -45,6 +53,7 @@ export default function TransactionForm({ user, accountId, type, onSuccess }: an
         </div>
         <h3 className="font-bold text-gray-900 capitalize text-lg">{type}</h3>
       </div>
+      {error && <p className="text-red-500 text-xs font-bold">{error}</p>}
       
       <div className="relative">
         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</span>

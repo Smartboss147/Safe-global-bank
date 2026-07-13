@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, updateDoc, setDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, getDocs, doc, updateDoc, setDoc, addDoc, serverTimestamp, orderBy } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Settings, Users, ArrowRightLeft, Activity, ShieldAlert, FileText, CheckCircle, XCircle } from 'lucide-react';
 
@@ -9,6 +9,7 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [cryptoTxs, setCryptoTxs] = useState<any[]>([]);
+  const [kycDocs, setKycDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState({ type: '', text: '' });
 
@@ -26,6 +27,9 @@ export default function AdminDashboard({ user }: { user: any }) {
 
       const cryptoTxSnapshot = await getDocs(collection(db, 'crypto_transactions'));
       setCryptoTxs(cryptoTxSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+
+      const kycDocsSnapshot = await getDocs(query(collection(db, 'kyc_documents'), orderBy('uploadedAt', 'desc')));
+      setKycDocs(kycDocsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
@@ -292,13 +296,13 @@ export default function AdminDashboard({ user }: { user: any }) {
                 <div className="p-6 bg-blue-50 border border-blue-100 rounded-2xl text-center">
                   <FileText className="w-12 h-12 text-blue-500 mx-auto mb-4" />
                   <h3 className="font-bold text-blue-900 text-lg">Pending KYC</h3>
-                  <p className="text-3xl font-black text-blue-600 mt-2">{users.filter(u => u.kycStatus === 'pending' || !u.kycStatus).length}</p>
+                  <p className="text-3xl font-black text-blue-600 mt-2">{kycDocs.filter(d => d.status === 'Pending').length}</p>
                   <p className="text-sm text-blue-700 mt-2">Require review</p>
                 </div>
              </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mt-6">
             <h2 className="text-xl font-bold mb-6 text-gray-900">KYC Verification Requests</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -306,29 +310,37 @@ export default function AdminDashboard({ user }: { user: any }) {
                   <tr>
                     <th className="p-4 border-b">User</th>
                     <th className="p-4 border-b">Email</th>
+                    <th className="p-4 border-b">Document</th>
                     <th className="p-4 border-b">Current Status</th>
                     <th className="p-4 border-b text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="text-sm">
-                  {users.length > 0 ? users.map((u: any) => (
-                    <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/50">
-                      <td className="p-4 font-bold text-gray-900">{u.firstName} {u.lastName}</td>
-                      <td className="p-4 text-gray-500">{u.email}</td>
+                  {kycDocs.length > 0 ? kycDocs.map((docItem: any) => (
+                    <tr key={docItem.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+                      <td className="p-4 font-bold text-gray-900">{docItem.firstName} {docItem.lastName}</td>
+                      <td className="p-4 text-gray-500">{docItem.email}</td>
+                      <td className="p-4 text-gray-500">
+                        <div className="flex flex-col">
+                          <span className="capitalize">{docItem.documentType?.replace('_', ' ')}</span>
+                          <span className="text-xs">{docItem.fileName}</span>
+                        </div>
+                      </td>
                       <td className="p-4">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          u.kycStatus === 'verified' ? 'bg-green-100 text-green-700' :
-                          u.kycStatus === 'rejected' ? 'bg-red-100 text-red-700' :
+                          docItem.status === 'Verified' ? 'bg-green-100 text-green-700' :
+                          docItem.status === 'Rejected' ? 'bg-red-100 text-red-700' :
                           'bg-yellow-100 text-yellow-700'
                         }`}>
-                          {u.kycStatus || 'pending'}
+                          {docItem.status || 'Pending'}
                         </span>
                       </td>
                       <td className="p-4 text-right space-x-2">
-                         {u.kycStatus !== 'verified' && (
+                         {docItem.status !== 'Verified' && (
                             <button onClick={async () => {
                               try {
-                                await updateDoc(doc(db, 'users', u.id), { kycStatus: 'verified' });
+                                await updateDoc(doc(db, 'kyc_documents', docItem.id), { status: 'Verified' });
+                                await updateDoc(doc(db, 'users', docItem.userId), { kycStatus: 'Verified' });
                                 setMsg({ type: 'success', text: 'User KYC verified.' });
                                 fetchData();
                               } catch(e) {
@@ -336,10 +348,11 @@ export default function AdminDashboard({ user }: { user: any }) {
                               }
                             }} className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg transition">Approve</button>
                          )}
-                         {u.kycStatus !== 'rejected' && (
+                         {docItem.status !== 'Rejected' && (
                             <button onClick={async () => {
                               try {
-                                await updateDoc(doc(db, 'users', u.id), { kycStatus: 'rejected' });
+                                await updateDoc(doc(db, 'kyc_documents', docItem.id), { status: 'Rejected' });
+                                await updateDoc(doc(db, 'users', docItem.userId), { kycStatus: 'Rejected' });
                                 setMsg({ type: 'success', text: 'User KYC rejected.' });
                                 fetchData();
                               } catch(e) {
@@ -350,7 +363,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                       </td>
                     </tr>
                   )) : (
-                    <tr><td colSpan={4} className="p-8 text-center text-gray-500 font-medium">No users found.</td></tr>
+                    <tr><td colSpan={5} className="p-8 text-center text-gray-500 font-medium">No KYC documents found.</td></tr>
                   )}
                 </tbody>
               </table>

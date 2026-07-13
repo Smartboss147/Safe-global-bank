@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { db, auth } from '../lib/firebase';
-import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc, onSnapshot, orderBy } from 'firebase/firestore';
 import { signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import TransactionForm from './TransactionForm';
@@ -8,6 +8,7 @@ import TransactionHistory from './TransactionHistory';
 import SpendingChart from './dashboard/SpendingChart';
 import Transfers from './dashboard/Transfers';
 import CryptoWallet from './dashboard/CryptoWallet';
+import TradingPlatform from './dashboard/TradingPlatform';
 import Cards from './dashboard/Cards';
 import Payments from './dashboard/Payments';
 import Savings from './dashboard/Savings';
@@ -30,6 +31,7 @@ export default function Dashboard({ user }: { user: any }) {
   const [showBalance, setShowBalance] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -37,13 +39,26 @@ export default function Dashboard({ user }: { user: any }) {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+    return () => unsubscribe();
+  }, [user]);
+
   const fetchAccount = async () => {
     // Fetch account
     const q = query(collection(db, 'accounts'), where('userId', '==', user.uid));
     const querySnapshot = await getDocs(q);
     if (!querySnapshot.empty) {
       setAccountId(querySnapshot.docs[0].id);
-      setAccount(querySnapshot.docs[0].data());
+      setAccount({ id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() });
     }
     
     // Fetch user profile info if available
@@ -77,9 +92,10 @@ export default function Dashboard({ user }: { user: any }) {
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
-        return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} />;
+        return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
       case 'transfers': return <div className="p-4"><Transfers user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'crypto': return <div className="p-4"><CryptoWallet user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'trading': return <div className="p-4"><TradingPlatform user={user} account={account} /></div>;
       case 'payments': return <div className="p-4"><Payments user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'cards': return <div className="p-4"><Cards user={user} account={account} /></div>;
       case 'savings': return <div className="p-4"><Savings user={user} account={account} fetchAccount={fetchAccount} /></div>;
@@ -90,7 +106,7 @@ export default function Dashboard({ user }: { user: any }) {
       case 'support': return <div className="p-4"><CustomerSupport user={user} /></div>;
       case 'stats': return <div className="p-4 space-y-6"><h2 className="text-2xl font-bold">Analytics</h2><SpendingChart /></div>;
       case 'history': return <div className="p-4"><TransactionHistory user={user} /></div>;
-      default: return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} />;
+      default: return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
     }
   };
 
@@ -110,7 +126,9 @@ export default function Dashboard({ user }: { user: any }) {
         <div className="flex items-center gap-4">
           <button className="relative p-2 rounded-full hover:bg-gray-100 transition text-gray-700" onClick={() => setShowNotifications(true)}>
             <Bell size={22} />
-            <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-gray-50"></span>
+            {notifications.filter(n => !n.read).length > 0 && (
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-gray-50"></span>
+            )}
           </button>
           <button className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden border-2 border-white shadow-sm" onClick={() => handleAction('settings')}>
             <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
@@ -129,21 +147,20 @@ export default function Dashboard({ user }: { user: any }) {
                   <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
                </div>
                <div className="max-h-80 overflow-y-auto">
-                  <div className="p-4 border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer">
-                     <p className="text-sm font-bold text-gray-900 mb-1">New Login Detected</p>
-                     <p className="text-xs text-gray-500">We noticed a new login from a Mac device in London.</p>
-                     <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">2 hours ago</p>
-                  </div>
-                  <div className="p-4 border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer">
-                     <p className="text-sm font-bold text-gray-900 mb-1">KYC Verification Completed</p>
-                     <p className="text-xs text-gray-500">Your identity documents have been approved. You are now Level 3 verified.</p>
-                     <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">Yesterday</p>
-                  </div>
-                  <div className="p-4 hover:bg-gray-50 transition cursor-pointer">
-                     <p className="text-sm font-bold text-gray-900 mb-1">Welcome to Safe Global</p>
-                     <p className="text-xs text-gray-500">Thanks for joining! Explore our digital banking features.</p>
-                     <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">2 days ago</p>
-                  </div>
+                  {notifications.length > 0 ? notifications.map((notification) => (
+                    <div key={notification.id} className="p-4 border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer">
+                       <p className="text-sm font-bold text-gray-900 mb-1">{notification.title}</p>
+                       <p className="text-xs text-gray-500">{notification.message}</p>
+                       <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">
+                         {notification.createdAt?.toDate ? 
+                           new Date(notification.createdAt.toDate()).toLocaleDateString() : 'Just now'}
+                       </p>
+                    </div>
+                  )) : (
+                    <div className="p-8 text-center text-gray-500 text-sm">
+                      No notifications right now.
+                    </div>
+                  )}
                </div>
             </motion.div>
           </>
@@ -193,7 +210,8 @@ export default function Dashboard({ user }: { user: any }) {
                   { id: 'history', icon: <Activity />, label: 'Activity', color: 'bg-yellow-100 text-yellow-700' },
                   { id: 'cards', icon: <CreditCard />, label: 'Cards', color: 'bg-green-100 text-green-700' },
                   { id: 'transfers', icon: <Send />, label: 'Transfer', color: 'bg-orange-100 text-orange-700' },
-                  { id: 'transfers', icon: <Globe />, label: 'Int\'l Wire', color: 'bg-yellow-100 text-yellow-700' },
+                  { id: 'crypto', icon: <Globe />, label: 'Crypto', color: 'bg-blue-100 text-blue-700' },
+                  { id: 'trading', icon: <BarChart2 />, label: 'Trading', color: 'bg-indigo-100 text-indigo-700' },
                   { id: 'payments', icon: <Download />, label: 'Deposit', color: 'bg-green-100 text-green-700' },
                   { id: 'loans', icon: <Wallet />, label: 'Loan', color: 'bg-orange-100 text-orange-700' },
                   { id: 'payments', icon: <Receipt />, label: 'IRS Refund', color: 'bg-green-100 text-green-700' },
@@ -245,7 +263,7 @@ export default function Dashboard({ user }: { user: any }) {
   );
 }
 
-function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount }: any) {
+function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
   return (
     <div className="px-4 pb-6 space-y-6">
       {/* Balance Card */}
@@ -321,7 +339,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
             <span className="font-bold text-gray-800">Account Info</span>
           </div>
           
-          <div className="bg-[#E6F0A3] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform">
+          <div className="bg-[#E6F0A3] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform" onClick={() => setActiveTab('transfers')}>
             <div className="w-12 h-12 bg-[#D1DF7B] text-[#55601C] rounded-full flex items-center justify-center mb-3">
               <Send size={24} />
             </div>
@@ -335,7 +353,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
             <span className="font-bold text-gray-800">More</span>
           </div>
 
-          <div className="bg-[#F5F0FF] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform">
+          <div className="bg-[#F5F0FF] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform" onClick={() => setActiveTab('history')}>
             <div className="w-12 h-12 bg-[#E6DDF5] text-[#6B44A8] rounded-full flex items-center justify-center mb-3">
               <History size={24} />
             </div>
@@ -349,8 +367,8 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
           <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Transfer & Deposit</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             <TransactionForm user={user} accountId={accountId} type="deposit" onSuccess={fetchAccount} />
-             <TransactionForm user={user} accountId={accountId} type="withdrawal" onSuccess={fetchAccount} />
+             <TransactionForm user={user} accountId={accountId} type="deposit" onSuccess={fetchAccount} currentBalance={account?.balance} />
+             <TransactionForm user={user} accountId={accountId} type="withdrawal" onSuccess={fetchAccount} currentBalance={account?.balance} />
           </div>
         </div>
       )}

@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { ShieldCheck, Bell, Globe, User, CreditCard, ChevronRight, Fingerprint, Lock, Smartphone, Camera, Save, X } from 'lucide-react';
+import { ShieldCheck, Bell, Globe, User, CreditCard, ChevronRight, Fingerprint, Lock, Smartphone, Camera, Save, X, AlertCircle } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
+import KYCUpload from './KYCUpload';
 
 export default function Settings({ user, userData, fetchAccount }: any) {
   const [notifications, setNotifications] = useState({ push: true, email: false, sms: true });
   const [isEditing, setIsEditing] = useState(false);
+  const [showKyc, setShowKyc] = useState(false);
   const [formData, setFormData] = useState({
     firstName: '', lastName: '', phone: '', address: ''
   });
@@ -37,6 +39,22 @@ export default function Settings({ user, userData, fetchAccount }: any) {
     }
   };
 
+  const kycStatus = userData?.kycStatus || 'Unverified';
+
+  if (showKyc) {
+    return (
+      <div className="space-y-4">
+        <button onClick={() => setShowKyc(false)} className="text-gray-500 hover:text-gray-700 flex items-center gap-1 font-medium mb-2">
+          <X size={18} /> Back to Settings
+        </button>
+        <KYCUpload user={user} userData={userData} onComplete={() => {
+          fetchAccount();
+          setShowKyc(false);
+        }} />
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden min-h-[80vh]">
       <div className="bg-[#0A3D36] p-8 text-center relative overflow-hidden">
@@ -48,15 +66,25 @@ export default function Settings({ user, userData, fetchAccount }: any) {
                <Camera className="text-white" size={24} />
             </div>
           </div>
-          <button className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg">
-            <ShieldCheck size={16} className="text-white" />
-          </button>
+          {kycStatus === 'Verified' ? (
+            <button className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg">
+              <ShieldCheck size={16} className="text-white" />
+            </button>
+          ) : (
+            <button className="absolute bottom-0 right-0 w-8 h-8 bg-yellow-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg">
+              <AlertCircle size={16} className="text-white" />
+            </button>
+          )}
         </div>
         <h2 className="text-2xl font-bold text-white relative z-10">{userData?.firstName} {userData?.lastName}</h2>
         <p className="text-white/70 text-sm mb-4 relative z-10">{user?.email}</p>
         
-        <div className="inline-block bg-white/10 backdrop-blur-md px-4 py-1.5 rounded-full text-white text-xs font-semibold border border-white/20 relative z-10">
-          KYC Verified Level 3
+        <div 
+          onClick={() => kycStatus !== 'Verified' && setShowKyc(true)}
+          className={`inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-4 py-1.5 rounded-full text-white text-xs font-semibold border border-white/20 relative z-10 ${kycStatus !== 'Verified' ? 'cursor-pointer hover:bg-white/20' : ''}`}
+        >
+          {kycStatus === 'Verified' ? 'KYC Verified Level 3' : kycStatus === 'Pending' ? 'KYC Pending Review' : 'Complete KYC Verification'}
+          {kycStatus !== 'Verified' && <ChevronRight size={14} />}
         </div>
       </div>
 
