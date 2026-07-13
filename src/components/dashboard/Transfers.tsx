@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, addDoc, doc, updateDoc, increment, serverTimestamp, getDocs, query, where } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, increment, serverTimestamp, getDocs, query, where, runTransaction } from 'firebase/firestore';
 import { CheckCircle, XCircle, Download } from 'lucide-react';
 
 export default function Transfers({ user, account, fetchAccount }: any) {
@@ -47,9 +47,93 @@ export default function Transfers({ user, account, fetchAccount }: any) {
     }
 
     try {
+      let txDescription = reference || `${transferType} transfer to ${recipient}`;
+
+      if (transferType === 'email') {
+        const qUser = query(collection(db, 'users'), where('email', '==', recipient.toLowerCase().trim()));
+        const userSnap = await getDocs(qUser);
+        if (userSnap.empty) {
+          throw new Error('Recipient user not found.');
+        }
+        const recipientUserDoc = userSnap.docs[0];
+        const recipientUserId = recipientUserDoc.id;
+
+        const qAcc = query(collection(db, 'accounts'), where('userId', '==', recipientUserId));
+        const accSnap = await getDocs(qAcc);
+        if (accSnap.empty) {
+          throw new Error("Recipient doesn't have an active account.");
+        }
+        const recipientAccountIdStr = accSnap.docs[0].id;
+        
+        let newDocId = '';
+
+        await runTransaction(db, async (transaction) => {
+          const senderUserRef = doc(db, 'users', user.uid);
+          const senderAccRef = doc(db, 'accounts', account.id);
+          const recipientUserRef = doc(db, 'users', recipientUserId);
+          const recipientAccRef = doc(db, 'accounts', recipientAccountIdStr);
+
+          const senderAccSnap = await transaction.get(senderAccRef);
+          if (!senderAccSnap.exists() || senderAccSnap.data().balance < val) {
+            throw new Error("Insufficient funds.");
+          }
+
+          transaction.update(senderAccRef, { balance: increment(-val) });
+          transaction.update(senderUserRef, { balance: increment(-val) });
+          transaction.update(recipientAccRef, { balance: increment(val) });
+          transaction.update(recipientUserRef, { balance: increment(val) });
+
+          const senderTxRef = doc(collection(db, 'transactions'));
+          transaction.set(senderTxRef, {
+            userId: user.uid,
+            accountId: account.id,
+            type: 'transfer',
+            transferType: 'email',
+            amount: val,
+            recipient,
+            description: txDescription,
+            status: 'completed',
+            createdAt: serverTimestamp()
+          });
+          newDocId = senderTxRef.id;
+
+          const recipientTxRef = doc(collection(db, 'transactions'));
+          transaction.set(recipientTxRef, {
+            userId: recipientUserId,
+            accountId: recipientAccountIdStr,
+            type: 'deposit',
+            amount: val,
+            description: `Transfer from ${user.email} - ${reference}`,
+            status: 'completed',
+            createdAt: serverTimestamp()
+          });
+        });
+
+        setReceiptData({
+          id: newDocId,
+          userId: user.uid,
+          accountId: account.id,
+          type: 'transfer',
+          transferType: 'email',
+          amount: val,
+          recipient,
+          description: txDescription,
+          status: 'completed',
+          date: new Date().toLocaleString()
+        });
+
+        fetchAccount();
+        setStatus('success');
+        setMessage('Transfer initiated successfully.');
+        setAmount('');
+        setRecipient('');
+        setReference('');
+        setLoading(false);
+        return;
+      }
+
       let recipientAccountId = null;
       let transactionStatus = 'pending';
-      let txDescription = reference || `${transferType} transfer to ${recipient}`;
 
       // Handle internal transfer (simulate finding the recipient)
       if (transferType === 'internal') {
@@ -142,7 +226,7 @@ export default function Transfers({ user, account, fetchAccount }: any) {
         <h2 className="text-2xl font-bold mb-6 text-gray-900">Money Transfer</h2>
         
         <div className="flex gap-4 mb-6 border-b border-gray-100 pb-2 overflow-x-auto hide-scrollbar">
-          {['internal', 'local', 'international', 'scheduled'].map(type => (
+          {['email', 'internal', 'local', 'international', 'scheduled'].map(type => (
             <button
               key={type}
               onClick={() => setTransferType(type)}
@@ -187,8 +271,17 @@ export default function Transfers({ user, account, fetchAccount }: any) {
           )}
           
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1.5">Recipient Account / IBAN</label>
-            <input type="text" value={recipient} onChange={e => setRecipient(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition" placeholder="Account Number or IBAN" required />
+            <label className="block text-sm font-bold text-gray-700 mb-1.5">
+              {transferType === 'email' ? 'Recipient Email Address' : 'Recipient Account / IBAN'}
+            </label>
+            <input 
+              type={transferType === 'email' ? 'email' : 'text'} 
+              value={recipient} 
+              onChange={e => setRecipient(e.target.value)} 
+              className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition" 
+              placeholder={transferType === 'email' ? 'user@example.com' : 'Account Number or IBAN'} 
+              required 
+            />
           </div>
 
           <div>

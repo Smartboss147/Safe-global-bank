@@ -18,39 +18,44 @@ export default function App() {
   useEffect(() => {
     try {
       const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-        console.log('User loaded:', currentUser?.email);
+        console.log('Auth state changed, user:', currentUser?.email);
         
         if (currentUser) {
           try {
             const userRef = doc(db, 'users', currentUser.uid);
             const userSnap = await getDoc(userRef);
+            
             if (!userSnap.exists()) {
+              console.log('User document does not exist, creating one for uid:', currentUser.uid);
               await setDoc(userRef, {
                 uid: currentUser.uid,
-                email: currentUser.email,
+                email: currentUser.email || '',
                 displayName: currentUser.displayName || '',
                 role: 'user',
                 balance: 0,
                 createdAt: serverTimestamp(),
                 kycStatus: 'pending'
               });
+              console.log('Successfully created user document in Firestore.');
+            } else {
+              console.log('User document already exists in Firestore for uid:', currentUser.uid);
             }
           } catch (docErr) {
-            console.error("Error checking/creating user doc:", docErr);
+            console.error("Firestore error while checking or creating user doc:", docErr);
           }
         }
         
         setUser(currentUser as any);
         setLoading(false);
       }, (err) => {
-        console.error('Auth error:', err);
+        console.error('Auth listener error:', err);
         setError(err.message);
         setLoading(false);
       });
 
       return () => unsubscribe();
     } catch (err: any) {
-      console.error('Setup error:', err);
+      console.error('Auth setup error:', err);
       setError(err.message);
       setLoading(false);
     }
