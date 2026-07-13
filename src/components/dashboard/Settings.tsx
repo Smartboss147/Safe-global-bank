@@ -1,135 +1,149 @@
 import { useState } from 'react';
-import { Settings as SettingsIcon, Bell, Globe, Moon, Sun, User, CreditCard } from 'lucide-react';
+import { ShieldCheck, Bell, Globe, User, CreditCard, ChevronRight, Fingerprint, Lock, Smartphone } from 'lucide-react';
 
 export default function Settings() {
   const [notifications, setNotifications] = useState({
-    email: true,
-    sms: false,
     push: true,
-    marketing: false
+    email: false,
+    sms: true,
   });
-  
-  const [darkMode, setDarkMode] = useState(false);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <SettingsIcon size={32} className="text-blue-900" />
-        <h2 className="text-2xl font-bold">Account Settings</h2>
+    <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden min-h-[80vh]">
+      {/* Profile Header */}
+      <div className="bg-[#0A3D36] p-8 text-center relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
+        <div className="w-24 h-24 mx-auto rounded-full bg-white/10 p-1 mb-4 relative z-10">
+          <div className="w-full h-full rounded-full overflow-hidden border-2 border-white">
+            <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Profile" className="w-full h-full object-cover" />
+          </div>
+          <button className="absolute bottom-0 right-0 w-8 h-8 bg-green-500 rounded-full border-2 border-white flex items-center justify-center shadow-lg">
+            <ShieldCheck size={16} className="text-white" />
+          </button>
+        </div>
+        <h2 className="text-2xl font-bold text-white relative z-10">John Doe</h2>
+        <p className="text-white/70 text-sm mb-4 relative z-10">john.doe@example.com</p>
+        
+        <div className="inline-block bg-white/10 backdrop-blur-md px-4 py-1.5 rounded-full text-white text-xs font-semibold border border-white/20 relative z-10">
+          KYC Verified Level 3
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <User size={20} className="text-gray-500" /> Profile Information
-            </h3>
-            <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); alert('Profile updated'); }}>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">First Name</label>
-                  <input type="text" defaultValue="John" className="w-full p-2.5 border border-gray-300 rounded-lg" />
+      <div className="p-6 space-y-8">
+        {/* Account Details */}
+        <div>
+          <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-2">Account Details</h3>
+          <div className="bg-gray-50/50 rounded-2xl border border-gray-100 overflow-hidden">
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <User size={20} />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
-                  <input type="text" defaultValue="Doe" className="w-full p-2.5 border border-gray-300 rounded-lg" />
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">Personal Information</p>
+                  <p className="text-xs text-gray-500">Name, DOB, Address</p>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                <input type="email" defaultValue="john.doe@example.com" disabled className="w-full p-2.5 border border-gray-200 bg-gray-50 text-gray-500 rounded-lg" />
-                <p className="text-xs text-gray-500 mt-1">Contact support to change your email address.</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
-                <input type="tel" defaultValue="+1 (555) 123-4567" className="w-full p-2.5 border border-gray-300 rounded-lg" />
-              </div>
-              <button type="submit" className="px-4 py-2 bg-blue-900 text-white rounded-lg font-semibold hover:bg-blue-800 transition">
-                Save Changes
-              </button>
-            </form>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Globe size={20} className="text-gray-500" /> Preferences
-            </h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
-                <select className="w-full p-2.5 border border-gray-300 rounded-lg bg-white">
-                  <option>English (US)</option>
-                  <option>Spanish (ES)</option>
-                  <option>French (FR)</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Base Currency</label>
-                <select className="w-full p-2.5 border border-gray-300 rounded-lg bg-white">
-                  <option>USD ($)</option>
-                  <option>EUR (€)</option>
-                  <option>GBP (£)</option>
-                </select>
-              </div>
-              <div className="flex items-center justify-between pt-2">
-                <div>
-                  <p className="font-semibold text-gray-900">Theme</p>
-                  <p className="text-sm text-gray-500">Toggle dark mode</p>
+              <ChevronRight size={20} className="text-gray-400" />
+            </button>
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 text-green-600 flex items-center justify-center">
+                  <CreditCard size={20} />
                 </div>
-                <div 
-                  onClick={() => setDarkMode(!darkMode)}
-                  className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors ${darkMode ? 'bg-slate-800' : 'bg-gray-300'}`}
-                >
-                  <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-all flex items-center justify-center ${darkMode ? 'left-6' : 'left-0.5'}`}>
-                    {darkMode ? <Moon size={12} className="text-slate-800" /> : <Sun size={12} className="text-yellow-500" />}
-                  </div>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">Linked Accounts</p>
+                  <p className="text-xs text-gray-500">Banks, Cards, Limits</p>
                 </div>
               </div>
-            </div>
+              <ChevronRight size={20} className="text-gray-400" />
+            </button>
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center">
+                  <ShieldCheck size={20} />
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">KYC & Verification</p>
+                  <p className="text-xs text-gray-500">Identity Documents</p>
+                </div>
+              </div>
+              <ChevronRight size={20} className="text-gray-400" />
+            </button>
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Bell size={20} className="text-gray-500" /> Notifications
-            </h3>
-            <div className="space-y-4">
-              {Object.entries(notifications).map(([key, value]) => (
-                <div key={key} className="flex items-center justify-between p-3 border-b border-gray-100 last:border-0">
-                  <div>
-                    <p className="font-semibold text-gray-900 capitalize">{key} Notifications</p>
-                    <p className="text-xs text-gray-500">Receive updates via {key}.</p>
+        {/* Security Settings */}
+        <div>
+          <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-2">Security</h3>
+          <div className="bg-gray-50/50 rounded-2xl border border-gray-100 overflow-hidden">
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center">
+                  <Lock size={20} />
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">Change Password</p>
+                  <p className="text-xs text-gray-500">Last changed 3 months ago</p>
+                </div>
+              </div>
+              <ChevronRight size={20} className="text-gray-400" />
+            </button>
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <Fingerprint size={20} />
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">Biometric Login</p>
+                  <p className="text-xs text-gray-500">FaceID / TouchID</p>
+                </div>
+              </div>
+              <div className="w-12 h-6 rounded-full bg-green-500 relative transition-colors shadow-inner">
+                <div className="w-5 h-5 bg-white rounded-full absolute top-0.5 right-0.5 shadow-sm"></div>
+              </div>
+            </button>
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 text-red-600 flex items-center justify-center">
+                  <Smartphone size={20} />
+                </div>
+                <div className="text-left">
+                  <p className="font-semibold text-gray-900">2-Factor Auth (2FA)</p>
+                  <p className="text-xs text-gray-500">Authenticator App</p>
+                </div>
+              </div>
+              <ChevronRight size={20} className="text-gray-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* Preferences */}
+        <div>
+          <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 px-2">Preferences</h3>
+          <div className="bg-gray-50/50 rounded-2xl border border-gray-100 overflow-hidden">
+             {Object.entries(notifications).map(([key, value], idx) => (
+                <div key={key} className={`flex items-center justify-between p-4 ${idx !== 2 ? 'border-b border-gray-100' : ''}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center">
+                      <Bell size={20} />
+                    </div>
+                    <div className="text-left">
+                      <p className="font-semibold text-gray-900 capitalize">{key} Notifications</p>
+                      <p className="text-xs text-gray-500">Alerts & marketing</p>
+                    </div>
                   </div>
                   <div 
                     onClick={() => setNotifications({...notifications, [key]: !value})}
-                    className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors ${value ? 'bg-blue-600' : 'bg-gray-300'}`}
+                    className={`w-12 h-6 rounded-full relative cursor-pointer transition-colors shadow-inner ${value ? 'bg-green-500' : 'bg-gray-300'}`}
                   >
-                    <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 shadow-sm transition-all ${value ? 'left-5' : 'left-0.5'}`}></div>
+                    <div className={`w-5 h-5 bg-white rounded-full absolute top-0.5 shadow-sm transition-all ${value ? 'right-0.5' : 'left-0.5'}`}></div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <CreditCard size={20} className="text-gray-500" /> Connected Accounts
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center p-3 bg-gray-50 border border-gray-200 rounded-xl">
-                <div>
-                  <p className="font-semibold text-sm">Stripe Account</p>
-                  <p className="text-xs text-gray-500">Connected</p>
-                </div>
-                <button className="text-sm text-red-600 font-medium">Disconnect</button>
-              </div>
-              <button className="w-full p-3 border border-dashed border-gray-300 text-blue-600 font-semibold rounded-xl hover:bg-gray-50 transition">
-                + Connect External Bank
-              </button>
-            </div>
+             ))}
           </div>
         </div>
+
       </div>
     </div>
   );

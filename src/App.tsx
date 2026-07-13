@@ -31,24 +31,16 @@ export default function App() {
 
   return (
     <Router>
-      <div className="min-h-screen bg-gray-50 flex flex-col">
-        <nav className="p-4 bg-white shadow-sm flex justify-between items-center">
-          <Link to="/" className="font-bold text-xl">Safe Global Bank</Link>
-          <div className="flex gap-4 items-center">
-            {user && user.email === 'admin@example.com' && (
-              <Link to="/admin" className="text-gray-600 hover:text-gray-900 font-medium">Admin Panel</Link>
-            )}
-            {user ? (
-              <Link to="/profile" className="text-gray-600 hover:text-gray-900 font-medium">Profile</Link>
-            ) : null}
-            {user ? (
-              <button onClick={() => signOut(auth)} className="text-red-600 font-medium">Sign Out</button>
-            ) : (
-              <Link to="/login" className="text-blue-600 font-medium">Login</Link>
-            )}
-          </div>
-        </nav>
-        <main className="flex-grow p-4">
+      <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
+        {!user && (
+          <nav className="p-4 bg-white shadow-sm flex justify-between items-center relative z-50">
+            <Link to="/" className="font-bold text-xl tracking-tight">Safe Global Bank</Link>
+            <div className="flex gap-4 items-center">
+              <Link to="/login" className="text-blue-600 font-bold hover:text-blue-800">Sign In</Link>
+            </div>
+          </nav>
+        )}
+        <main className={`flex-grow ${!user ? 'p-4' : 'p-0 pb-20'}`}>
           <Routes>
             <Route path="/" element={user ? <Dashboard user={user} /> : <LandingPage />} />
             <Route path="/admin" element={user ? <AdminDashboard user={user} /> : <Navigate to="/login" />} />
