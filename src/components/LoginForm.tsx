@@ -3,7 +3,7 @@ import { login, signup } from '../lib/auth';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Fingerprint, ChevronLeft, ChevronRight, CheckCircle2, User, Building, Landmark, Coins, Briefcase } from 'lucide-react';
 import { db, auth } from '../lib/firebase';
-import { collection, addDoc, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 import { sendPasswordResetEmail, signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -34,17 +34,15 @@ export default function LoginForm({ user }: { user?: any }) {
   useEffect(() => {
     async function checkRole() {
       if (user) {
+        // Instantly navigate to home to show the Dashboard, preventing any lagging or iframe/Firestore block from keeping them on login screen
+        navigate('/');
         try {
-          const { doc, getDoc } = await import('firebase/firestore');
-          const { db } = await import('../lib/firebase');
           const userDoc = await getDoc(doc(db, 'users', user.uid));
           if (userDoc.exists() && userDoc.data().role === 'admin') {
             navigate('/admin');
-          } else {
-            navigate('/');
           }
         } catch (err) {
-          navigate('/');
+          console.error('Error verifying user role in Firestore:', err);
         }
       }
     }
