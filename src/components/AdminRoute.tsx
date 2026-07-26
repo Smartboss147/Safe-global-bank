@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
-import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 
 export default function AdminRoute({ user, children }: any) {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
@@ -13,8 +12,13 @@ export default function AdminRoute({ user, children }: any) {
         return;
       }
       try {
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        if (userDoc.exists() && userDoc.data().role === 'admin') {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single();
+          
+        if (data && data.role === 'admin') {
           setIsAdmin(true);
         } else {
           setIsAdmin(false);

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
 import { ArrowDownLeft, ArrowUpRight, Search, Filter, Download, FileText } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -12,13 +11,15 @@ export default function TransactionHistory({ user }: any) {
 
   useEffect(() => {
     const fetchTransactions = async () => {
-      const q = query(
-        collection(db, 'transactions'), 
-        where('userId', '==', user.uid),
-        orderBy('createdAt', 'desc')
-      );
-      const querySnapshot = await getDocs(q);
-      setTransactions(querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+        
+      if (data) {
+        setTransactions(data);
+      }
     };
     fetchTransactions();
   }, [user]);
@@ -31,8 +32,8 @@ export default function TransactionHistory({ user }: any) {
       const doc = new jsPDF();
       
       const statementTransactions = transactions.filter(t => {
-        if (!t.createdAt || !t.createdAt.toDate) return false;
-        const date = t.createdAt.toDate();
+        if (!t.created_at) return false;
+        const date = new Date(t.created_at);
         return date.getMonth() === monthIndex && date.getFullYear() === year;
       });
 
@@ -47,10 +48,10 @@ export default function TransactionHistory({ user }: any) {
         doc.text("No transactions found for this period.", 14, 46);
       } else {
         const tableData = statementTransactions.map(t => [
-          t.createdAt.toDate().toLocaleDateString(),
+          new Date(t.created_at).toLocaleDateString(),
           t.description || 'Transaction',
           t.type.toUpperCase(),
-          `${t.type === 'deposit' ? '+' : '-'}$${Number(t.amount).toFixed(2)}`
+          `${t.type === 'deposit' || t.type === 'transfer_in' ? '+' : '-'}$${Number(t.amount).toFixed(2)}`
         ]);
 
         autoTable(doc, {
@@ -124,17 +125,17 @@ export default function TransactionHistory({ user }: any) {
         ) : filtered.map(t => (
           <div key={t.id} className="flex justify-between items-center p-4 bg-gray-50/50 rounded-2xl border border-gray-100/50 hover:bg-gray-50 transition-colors">
             <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${t.type === 'deposit' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                {t.type === 'deposit' ? <ArrowDownLeft size={24} /> : <ArrowUpRight size={24} />}
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${t.type === 'deposit' || t.type === 'transfer_in' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                {t.type === 'deposit' || t.type === 'transfer_in' ? <ArrowDownLeft size={24} /> : <ArrowUpRight size={24} />}
               </div>
               <div>
                 <p className="font-bold text-gray-900">{t.description || 'Transaction'}</p>
-                <p className="text-sm text-gray-500 capitalize">{t.type} • {t.createdAt?.toDate ? t.createdAt.toDate().toLocaleDateString() : 'Just now'}</p>
+                <p className="text-sm text-gray-500 capitalize">{t.type} • {t.created_at ? new Date(t.created_at).toLocaleDateString() : 'Just now'}</p>
               </div>
             </div>
             <div className="text-right">
-              <span className={`font-bold text-lg ${t.type === 'deposit' ? 'text-green-600' : 'text-gray-900'}`}>
-                {t.type === 'deposit' ? '+' : '-'}${Number(t.amount).toFixed(2)}
+              <span className={`font-bold text-lg ${t.type === 'deposit' || t.type === 'transfer_in' ? 'text-green-600' : 'text-gray-900'}`}>
+                {t.type === 'deposit' || t.type === 'transfer_in' ? '+' : '-'}${Number(t.amount).toFixed(2)}
               </span>
               <p className="text-xs text-gray-400 font-medium">{t.status || 'Completed'}</p>
             </div>

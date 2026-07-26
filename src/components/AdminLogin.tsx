@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { login } from '../lib/auth';
+import { login, logout } from '../lib/auth';
 import { useNavigate } from 'react-router-dom';
 import { ShieldAlert, CheckCircle2, Eye, EyeOff } from 'lucide-react';
-import { doc, getDoc } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
-import { signOut } from 'firebase/auth';
+import { supabase } from '../lib/supabase';
 
 export default function AdminLogin({ user }: { user?: any }) {
   const [email, setEmail] = useState('');
@@ -19,8 +17,13 @@ export default function AdminLogin({ user }: { user?: any }) {
     async function checkExistingUser() {
       if (user) {
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists() && userDoc.data().role === 'admin') {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+            
+          if (data && data.role === 'admin') {
             navigate('/admin');
           } else {
             // Not an admin, don't auto-redirect to admin dashboard. 
@@ -40,14 +43,20 @@ export default function AdminLogin({ user }: { user?: any }) {
     setLoading(true);
     
     try {
-      const userCredential = await login(email, password);
+      const { data, error: authError } = await login(email, password);
+      if (authError) throw authError;
       
       // Verify admin role
-      const userDoc = await getDoc(doc(db, 'users', userCredential.user.uid));
-      if (userDoc.exists() && userDoc.data().role === 'admin') {
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single();
+        
+      if (profile && profile.role === 'admin') {
         navigate('/admin');
       } else {
-        await signOut(auth);
+        await logout();
         setError('Access denied: Unauthorized role.');
       }
     } catch (err: any) {
@@ -56,6 +65,7 @@ export default function AdminLogin({ user }: { user?: any }) {
       setLoading(false);
     }
   };
+
 
   return (
     <div className="w-full max-w-md mx-auto pt-10">

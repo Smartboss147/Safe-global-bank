@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, query, getDocs, doc, updateDoc, setDoc, addDoc, serverTimestamp, orderBy } from 'firebase/firestore';
-import { db, auth } from '../lib/firebase';
+
+import { supabase } from '../lib/supabase';
 import { 
   Users, ArrowRightLeft, Activity, ShieldAlert, FileText, CheckCircle, XCircle, 
   DollarSign, Lock, Unlock, RefreshCw, Eye, Edit3, Trash2, ShieldCheck, UserX, 
@@ -33,23 +33,25 @@ export default function AdminDashboard({ user }: { user: any }) {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      setUsers(usersSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      
+      const { data: usersData } = await supabase.from('profiles').select('*');
+      if (usersData) setUsers(usersData);
 
-      const accSnapshot = await getDocs(collection(db, 'accounts'));
-      setAccounts(accSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: accountsData } = await supabase.from('accounts').select('*');
+      if (accountsData) setAccounts(accountsData);
 
-      const txSnapshot = await getDocs(collection(db, 'transactions'));
-      setTransactions(txSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: txData } = await supabase.from('transactions').select('*');
+      if (txData) setTransactions(txData);
 
-      const auditSnapshot = await getDocs(collection(db, 'audit_logs'));
-      setAuditLogs(auditSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: auditData } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
+      if (auditData) setAuditLogs(auditData);
 
-      const cryptoTxSnapshot = await getDocs(collection(db, 'crypto_transactions'));
-      setCryptoTxs(cryptoTxSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: cryptoData } = await supabase.from('crypto_transactions').select('*');
+      if (cryptoData) setCryptoTxs(cryptoData);
 
-      const kycDocsSnapshot = await getDocs(query(collection(db, 'kyc_documents')));
-      setKycDocs(kycDocsSnapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+      const { data: kycData } = await supabase.from('kyc_documents').select('*');
+      if (kycData) setKycDocs(kycData);
+
     } catch (error) {
       console.error("Error fetching admin data:", error);
     } finally {
@@ -66,18 +68,19 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   const logAuditAction = async (action: string, targetUser: string, details: string) => {
     try {
+      
       const logData = {
-        adminId: user?.uid || 'admin',
-        adminEmail: user?.email || 'admin@safeglobal.com',
-        adminName: user?.displayName || 'System Administrator',
+        admin_id: user?.id || 'admin',
+        admin_email: user?.email || 'admin@safeglobal.com',
+        admin_name: user?.displayName || 'System Administrator',
         action,
-        targetUser,
+        target_user: targetUser,
         details,
-        timestamp: new Date().toISOString(),
-        ipAddress: '127.0.0.1'
+        ip_address: '127.0.0.1'
       };
-      await addDoc(collection(db, 'audit_logs'), logData);
-      setAuditLogs(prev => [logData, ...prev]);
+      const { data: insertedLog } = await supabase.from('audit_logs').insert([logData]).select().single();
+      if(insertedLog) setAuditLogs(prev => [insertedLog, ...prev]);
+
     } catch (e) {
       console.error("Error logging audit:", e);
     }
@@ -85,22 +88,23 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   const handleUpdateBalance = async (accountId: string, newBalance: number, reason: string) => {
     try {
+      
       const targetAcc = accounts.find(a => a.id === accountId);
       const oldBalance = targetAcc ? targetAcc.balance : 0;
       
-      await updateDoc(doc(db, 'accounts', accountId), { balance: newBalance });
+      await supabase.from('accounts').update({ balance: newBalance }).eq('id', accountId);
       
       // Create transaction record for audit integrity
-      await addDoc(collection(db, 'transactions'), {
-        userId: targetAcc?.userId || 'unknown',
-        accountId,
+      await supabase.from('transactions').insert([{
+        user_id: targetAcc?.user_id || 'unknown',
+        account_id: accountId,
         type: newBalance > oldBalance ? 'admin_credit' : 'admin_debit',
         amount: Math.abs(newBalance - oldBalance),
         currency: targetAcc?.currency || 'USD',
-        status: 'Completed',
+        status: 'completed',
         description: `Admin balance adjustment: ${reason}`,
-        createdAt: new Date().toISOString()
-      });
+      }]);
+
 
       await logAuditAction('WALLET_ADJUSTMENT', targetAcc?.userId || accountId, `Changed balance from $${oldBalance} to $${newBalance}. Reason: ${reason}`);
       setMsg({ type: 'success', text: 'Wallet balance adjusted successfully and recorded.' });
@@ -113,7 +117,9 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   const handleUserStatusUpdate = async (userId: string, statusField: string, statusValue: any, actionName: string) => {
     try {
-      await updateDoc(doc(db, 'users', userId), { [statusField]: statusValue });
+      
+      await supabase.from('profiles').update({ [statusField === 'kycStatus' ? 'kyc_status' : statusField]: statusValue }).eq('id', userId);
+
       await logAuditAction(actionName, userId, `Updated ${statusField} to ${statusValue}`);
       setMsg({ type: 'success', text: `User ${actionName.toLowerCase()} successfully.` });
       fetchData();
@@ -124,7 +130,9 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   const handleTxStatus = async (txId: string, status: string, collectionName = 'transactions') => {
     try {
-      await updateDoc(doc(db, collectionName, txId), { status });
+      
+      await supabase.from(collectionName).update({ status }).eq('id', txId);
+
       await logAuditAction('TRANSACTION_STATUS_UPDATE', txId, `Marked transaction as ${status}`);
       setMsg({ type: 'success', text: `Transaction marked as ${status}` });
       fetchData();
@@ -137,13 +145,13 @@ export default function AdminDashboard({ user }: { user: any }) {
   const totalUsers = users.length;
   const activeUsers = users.filter(u => u.status !== 'suspended' && u.status !== 'frozen').length;
   const suspendedUsers = users.filter(u => u.status === 'suspended').length;
-  const verifiedUsers = users.filter(u => u.kycStatus === 'verified' || u.kycStatus === 'Approved').length;
+  const verifiedUsers = users.filter(u => u.kyc_status === 'verified' || u.kyc_status === 'Approved').length;
   
   const totalWalletBalance = accounts.reduce((acc, curr) => acc + (Number(curr.balance) || 0), 0);
   const totalTransactions = transactions.length + cryptoTxs.length;
-  const pendingTransactions = transactions.filter(t => t.status === 'Pending' || t.status === 'pending').length;
-  const successfulTransactions = transactions.filter(t => t.status === 'Completed' || t.status === 'success').length;
-  const failedTransactions = transactions.filter(t => t.status === 'Failed' || t.status === 'failed').length;
+  const pendingTransactions = transactions.filter(t => t.status === 'pending' || t.status === 'pending').length;
+  const successfulTransactions = transactions.filter(t => t.status === 'completed' || t.status === 'success').length;
+  const failedTransactions = transactions.filter(t => t.status === 'failed' || t.status === 'failed').length;
 
   const filteredUsers = users.filter(u => 
     u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -288,7 +296,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-md text-xs font-bold">{log.action}</span>
-                        <span className="text-xs text-gray-400">{new Date(log.timestamp).toLocaleString()}</span>
+                        <span className="text-xs text-gray-400">{new Date(log.created_at).toLocaleString()}</span>
                       </div>
                       <p className="text-sm font-medium text-gray-800 mt-1.5">{log.details}</p>
                       <p className="text-xs text-gray-500 mt-1">Admin: <span className="font-semibold">{log.adminName}</span></p>
@@ -377,7 +385,7 @@ export default function AdminDashboard({ user }: { user: any }) {
               </thead>
               <tbody className="text-sm">
                 {filteredUsers.length > 0 ? filteredUsers.map((u: any) => {
-                  const acc = accounts.find(a => a.userId === u.id || a.userId === u.uid);
+                  const acc = accounts.find(a => a.user_id === u.id || a.user_id === u.id);
                   return (
                     <tr key={u.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition">
                       <td className="p-4">
@@ -397,9 +405,9 @@ export default function AdminDashboard({ user }: { user: any }) {
                       </td>
                       <td className="p-4">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                          u.kycStatus === 'verified' || u.kycStatus === 'Approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                          u.kyc_status === 'verified' || u.kyc_status === 'Approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                         }`}>
-                          {u.kycStatus || 'Pending'}
+                          {u.kyc_status || 'Pending'}
                         </span>
                       </td>
                       <td className="p-4">
@@ -578,7 +586,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                         {tx.status || 'Completed'}
                       </span>
                     </td>
-                    <td className="p-4 text-xs text-gray-500">{new Date(tx.createdAt || Date.now()).toLocaleString()}</td>
+                    <td className="p-4 text-xs text-gray-500">{new Date(tx.created_at || Date.now()).toLocaleString()}</td>
                     <td className="p-4 text-right">
                       {tx.status === 'Pending' || tx.status === 'pending' ? (
                         <div className="flex items-center justify-end gap-2">
@@ -650,7 +658,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                   <p className="text-xs text-gray-400">Admin: <span className="text-gray-700 font-semibold">{log.adminEmail}</span> ({log.adminName})</p>
                 </div>
                 <div className="text-right text-xs text-gray-500 font-mono">
-                  {new Date(log.timestamp).toLocaleString()}
+                  {new Date(log.created_at).toLocaleString()}
                 </div>
               </div>
             ))}
@@ -672,13 +680,13 @@ export default function AdminDashboard({ user }: { user: any }) {
                   <div className="flex items-center justify-between">
                     <h3 className="font-bold text-gray-900">{u.displayName || u.email}</h3>
                     <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      u.kycStatus === 'verified' || u.kycStatus === 'Approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                      u.kyc_status === 'verified' || u.kyc_status === 'Approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                     }`}>
-                      {u.kycStatus || 'Pending'}
+                      {u.kyc_status || 'Pending'}
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Email: {u.email}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">Joined: {new Date(u.createdAt || Date.now()).toLocaleDateString()}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">Joined: {new Date(u.created_at || Date.now()).toLocaleDateString()}</p>
                 </div>
                 <div className="flex items-center gap-2 pt-3 border-t border-gray-200">
                   <button 

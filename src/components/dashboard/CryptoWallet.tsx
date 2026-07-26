@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { supabase } from '../../lib/supabase';
 import { ArrowDownLeft, ArrowUpRight, Copy, QrCode, ChevronDown, CheckCircle, XCircle } from 'lucide-react';
 
 const SUPPORTED_COINS = [
@@ -37,20 +36,32 @@ export default function CryptoWallet({ user }: any) {
   const fetchWallet = async () => {
     if (!user) return;
     setLoading(true);
-    const q = query(collection(db, 'crypto_wallets'), where('userId', '==', user.uid));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      setWallet({ id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() });
+    
+    const { data, error } = await supabase
+      .from('crypto_wallets')
+      .select('*')
+      .eq('user_id', user.id)
+      .single();
+      
+    if (data) {
+      setWallet(data);
     } else {
       // Create empty wallet
       const newWallet = {
-        userId: user.uid,
+        user_id: user.id,
         balances: SUPPORTED_COINS.reduce((acc: any, coin) => ({ ...acc, [coin.symbol]: 0 }), {}),
-        tradingBalance: 0,
+        trading_balance: 0,
         address: '0x' + Array.from({length: 40}, () => Math.floor(Math.random()*16).toString(16)).join('')
       };
-      const docRef = await addDoc(collection(db, 'crypto_wallets'), newWallet);
-      setWallet({ id: docRef.id, ...newWallet });
+      const { data: inserted, error: insertError } = await supabase
+        .from('crypto_wallets')
+        .insert([newWallet])
+        .select()
+        .single();
+        
+      if (inserted) {
+        setWallet(inserted);
+      }
     }
     setLoading(false);
   };
@@ -88,21 +99,20 @@ export default function CryptoWallet({ user }: any) {
 
     try {
       // Create pending transaction for admin approval
-      await addDoc(collection(db, 'crypto_transactions'), {
-        userId: user.uid,
-        walletId: wallet.id,
+      await supabase.from('crypto_transactions').insert([{
+        user_id: user.id,
+        wallet_id: wallet.id,
         type: 'withdrawal',
         asset: sendAsset.symbol,
         network: sendNetwork,
         amount: val,
         address: sendAddress,
-        status: 'pending',
-        createdAt: serverTimestamp()
-      });
+        status: 'pending'
+      }]);
 
       // Deduct from local wallet balance immediately for simulation
       const newBalances = { ...wallet.balances, [sendAsset.symbol]: currentBalance - val };
-      await updateDoc(doc(db, 'crypto_wallets', wallet.id), { balances: newBalances });
+      await supabase.from('crypto_wallets').update({ balances: newBalances }).eq('id', wallet.id);
       
       setWallet({ ...wallet, balances: newBalances });
       setMsg({ type: 'success', text: `Withdrawal of ${val} ${sendAsset.symbol} submitted and is pending network confirmation.` });
@@ -119,17 +129,16 @@ export default function CryptoWallet({ user }: any) {
     setMsg({ type: '', text: '' });
     try {
       // Simulate an incoming deposit (for demonstration)
-      await addDoc(collection(db, 'crypto_transactions'), {
-        userId: user.uid,
-        walletId: wallet.id,
+      await supabase.from('crypto_transactions').insert([{
+        user_id: user.id,
+        wallet_id: wallet.id,
         type: 'deposit',
         asset: selectedReceiveAsset.symbol,
         network: selectedNetwork,
         amount: 0, // Admin must fill this
         address: wallet.address,
-        status: 'pending',
-        createdAt: serverTimestamp()
-      });
+        status: 'pending'
+      }]);
       setMsg({ type: 'success', text: `System notified of incoming ${selectedReceiveAsset.symbol} deposit. Pending network confirmation.` });
     } catch (err) {
        setMsg({ type: 'error', text: 'Failed to process deposit notification.' });
@@ -149,7 +158,7 @@ export default function CryptoWallet({ user }: any) {
   }));
 
   const cryptoValue = activeAssets.reduce((sum, a) => sum + a.value, 0);
-  const tradingBalance = wallet.tradingBalance || 0;
+  const tradingBalance = wallet.trading_balance || 0;
   const totalValue = cryptoValue + tradingBalance;
 
   return (

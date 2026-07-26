@@ -1,6 +1,5 @@
-import { auth } from './firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { supabase } from './supabase';
 
-export const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
-export const signup = (email, password) => createUserWithEmailAndPassword(auth, email, password);
-export const logout = () => signOut(auth);
+export const login = (email, password) => supabase.auth.signInWithPassword({ email, password });
+export const signup = (email, password) => supabase.auth.signUp({ email, password });
+export const logout = () => supabase.auth.signOut();

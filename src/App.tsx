@@ -1,8 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import { auth, db } from './lib/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase } from './lib/supabase';
 import Dashboard from './components/Dashboard';
 import LoginForm from './components/LoginForm';
 import LandingPage from './components/LandingPage';
@@ -17,56 +15,26 @@ export default function App() {
 
   useEffect(() => {
     try {
-      const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-        console.log('Auth state changed, user:', currentUser?.email);
-        
-        if (currentUser) {
-          // Instantly set the user and stop loading so the UI renders without blocking
-          setUser(currentUser as any);
-          setLoading(false);
-
-          // Perform the check and potential creation in the background
-          (async () => {
-            try {
-              const userRef = doc(db, 'users', currentUser.uid);
-              const userSnap = await getDoc(userRef);
-              
-              if (!userSnap.exists()) {
-                console.log('User document does not exist, creating one for uid:', currentUser.uid);
-                await setDoc(userRef, {
-                  uid: currentUser.uid,
-                  email: currentUser.email || '',
-                  displayName: currentUser.displayName || '',
-                  role: 'user',
-                  balance: 0,
-                  createdAt: serverTimestamp(),
-                  kycStatus: 'pending'
-                });
-                console.log('Successfully created user document in Firestore.');
-              } else {
-                console.log('User document already exists in Firestore for uid:', currentUser.uid);
-              }
-            } catch (docErr) {
-              console.error("Firestore error while checking or creating user doc:", docErr);
-            }
-          })();
-        } else {
-          setUser(null);
-          setLoading(false);
-        }
-      }, (err) => {
-        console.error('Auth listener error:', err);
-        setError(err.message);
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setUser(session?.user ?? null);
         setLoading(false);
       });
 
-      return () => unsubscribe();
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          setUser(session?.user ?? null);
+          setLoading(false);
+        }
+      );
+
+      return () => subscription.unsubscribe();
     } catch (err: any) {
       console.error('Auth setup error:', err);
       setError(err.message);
       setLoading(false);
     }
   }, []);
+
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center bg-gray-50"><p>Loading...</p></div>;

@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { login, signup } from '../lib/auth';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Fingerprint, ChevronLeft, ChevronRight, CheckCircle2, User, Building, Landmark, Coins, Briefcase } from 'lucide-react';
-import { db, auth } from '../lib/firebase';
-import { collection, addDoc, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
-import { sendPasswordResetEmail, signOut } from 'firebase/auth';
+import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function LoginForm({ user }: { user?: any }) {
@@ -37,12 +35,17 @@ export default function LoginForm({ user }: { user?: any }) {
         // Instantly navigate to home to show the Dashboard, preventing any lagging or iframe/Firestore block from keeping them on login screen
         navigate('/');
         try {
-          const userDoc = await getDoc(doc(db, 'users', user.uid));
-          if (userDoc.exists() && userDoc.data().role === 'admin') {
+          const { data, error } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+            
+          if (data && data.role === 'admin') {
             navigate('/admin');
           }
         } catch (err) {
-          console.error('Error verifying user role in Firestore:', err);
+          console.error('Error verifying user role in Supabase:', err);
         }
       }
     }
@@ -55,7 +58,8 @@ export default function LoginForm({ user }: { user?: any }) {
     setSuccessMsg('');
     setLoading(true);
     try {
-      await login(loginEmail, loginPassword);
+      const { error: authError } = await login(loginEmail, loginPassword);
+      if (authError) throw authError;
     } catch (err: any) {
       setError(err.message || 'Failed to login');
     } finally {
@@ -71,7 +75,8 @@ export default function LoginForm({ user }: { user?: any }) {
     setError('');
     setSuccessMsg('');
     try {
-      await sendPasswordResetEmail(auth, loginEmail);
+      const { error } = await supabase.auth.resetPasswordForEmail(loginEmail);
+      if (error) throw error;
       setSuccessMsg('Password reset email sent. Please check your inbox.');
     } catch (err: any) {
       setError(err.message || 'Failed to send password reset email.');
@@ -95,33 +100,26 @@ export default function LoginForm({ user }: { user?: any }) {
     setError('');
     setLoading(true);
     try {
-      const userCredential = await signup(signupData.email, signupData.password);
+      const { data: userCredential, error: signupError } = await signup(signupData.email, signupData.password);
+      if (signupError) throw signupError;
+      
       // Create initial account just in case so dashboard works
-      try {
-        await addDoc(collection(db, 'accounts'), {
-          userId: userCredential.user.uid,
-          accountNumber: '9424' + Math.floor(Math.random() * 1000000),
-          balance: 0,
-          currency: 'USD',
-          type: signupData.accountType,
-          status: 'active',
-          createdAt: serverTimestamp()
-        });
-        await setDoc(doc(db, 'users', userCredential.user.uid), {
-           uid: userCredential.user.uid,
-           firstName: signupData.firstName,
-           lastName: signupData.lastName,
-           displayName: `${signupData.firstName} ${signupData.lastName}`,
-           email: signupData.email,
-           phone: signupData.phone,
-           address: signupData.address,
-           role: 'user',
-           balance: 0,
-           kycStatus: 'pending',
-           createdAt: serverTimestamp()
-        }, { merge: true });
-      } catch (dbErr) {
-        console.error('Error creating user profile/account docs:', dbErr);
+      if (userCredential?.user) {
+        try {
+          await supabase.from('accounts').insert({
+            user_id: userCredential.user.id,
+            account_number: '9424' + Math.floor(Math.random() * 1000000),
+            balance: 0,
+            currency: 'USD',
+            account_type: signupData.accountType
+          });
+          
+          await supabase.from('profiles').update({
+            display_name: `${signupData.firstName} ${signupData.lastName}`,
+          }).eq('id', userCredential.user.id);
+        } catch (dbErr) {
+          console.error('Error creating user profile/account docs:', dbErr);
+        }
       }
       navigate('/');
     } catch (err: any) {

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, addDoc, serverTimestamp, query, where, getDocs, orderBy, onSnapshot } from 'firebase/firestore';
+import { supabase } from '../../lib/supabase';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { TrendingUp, TrendingDown, Clock, CheckCircle, XCircle, ArrowRightLeft } from 'lucide-react';
 
@@ -26,15 +25,19 @@ export default function TradingPlatform({ user, account }: any) {
 
   useEffect(() => {
     if (!user) return;
-    const q = query(
-      collection(db, 'trades'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setTrades(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubscribe();
+    
+    const fetchTrades = async () => {
+      const { data } = await supabase.from('trades').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+      if (data) setTrades(data);
+    };
+    fetchTrades();
+    const channel = supabase.channel('trading_platform')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trades', filter: `user_id=eq.${user.id}` }, payload => {
+        fetchTrades();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   const handleTrade = async (type: 'buy' | 'sell') => {
@@ -45,16 +48,17 @@ export default function TradingPlatform({ user, account }: any) {
 
     setLoading(true);
     try {
-      await addDoc(collection(db, 'trades'), {
-        userId: user.uid,
-        accountId: account?.id || null,
-        asset,
+      
+      await supabase.from('trades').insert([{
+        user_id: user.id,
+        trading_account_id: account?.id || null, // Might need to fetch trading_account_id
+        symbol: asset,
         type,
         amount: Number(amount),
         price: 166.00, // Mock current price
-        status: 'pending',
-        createdAt: serverTimestamp()
-      });
+        status: 'pending'
+      }]);
+
       setAmount('');
       alert(`Trade submitted! Waiting for admin settlement.`);
     } catch (error) {
@@ -215,7 +219,7 @@ export default function TradingPlatform({ user, account }: any) {
               ) : trades.map((trade) => (
                 <tr key={trade.id} className="hover:bg-gray-50 transition">
                   <td className="p-4 text-gray-600 whitespace-nowrap">
-                    {trade.createdAt?.toDate ? new Date(trade.createdAt.toDate()).toLocaleString() : 'Just now'}
+                    {trade.created_at ? new Date(trade.created_at).toLocaleString() : 'Just now'}
                   </td>
                   <td className="p-4 font-bold text-gray-900">{trade.asset}</td>
                   <td className="p-4">

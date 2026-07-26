@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { db } from '../lib/firebase';
-import { collection, addDoc, doc, updateDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { supabase } from '../lib/supabase';
+
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 
 export default function TransactionForm({ user, accountId, type, onSuccess, currentBalance }: any) {
@@ -22,20 +22,24 @@ export default function TransactionForm({ user, accountId, type, onSuccess, curr
     }
 
     // Create transaction
-    await addDoc(collection(db, 'transactions'), {
-      userId: user.uid,
-      accountId: accountId,
+    
+    const { data: insertedTx } = await supabase.from('transactions').insert([{
+      user_id: user.id,
+      account_id: accountId,
       type,
       amount: val,
       description,
-      createdAt: serverTimestamp(),
-    });
+      status: 'completed'
+    }]);
+
 
     // Update account balance
-    const accountRef = doc(db, 'accounts', accountId);
-    await updateDoc(accountRef, {
-      balance: increment(type === 'deposit' ? val : -val)
-    });
+    
+    const { data: currAcc } = await supabase.from('accounts').select('balance').eq('id', accountId).single();
+    if(currAcc) {
+      await supabase.from('accounts').update({ balance: currAcc.balance + (type === 'deposit' ? val : -val) }).eq('id', accountId);
+    }
+
 
     setAmount('');
     setDescription('');

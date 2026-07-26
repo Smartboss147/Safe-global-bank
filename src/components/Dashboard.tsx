@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { db, auth } from '../lib/firebase';
-import { collection, query, where, getDocs, doc, getDoc, onSnapshot, orderBy } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
+import { supabase } from '../lib/supabase';
+
+
 import { motion, AnimatePresence } from 'motion/react';
 import TransactionForm from './TransactionForm';
 import TransactionHistory from './TransactionHistory';
@@ -41,32 +41,38 @@ export default function Dashboard({ user }: { user: any }) {
 
   useEffect(() => {
     if (!user) return;
-    const q = query(
-      collection(db, 'notifications'),
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setNotifications(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-    });
-    return () => unsubscribe();
+    
+    const fetchNotifications = async () => {
+      const { data } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+      if (data) setNotifications(data);
+    };
+    fetchNotifications();
+    
+    const channel = supabase.channel('dashboard_notifs')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, payload => {
+        fetchNotifications();
+      })
+      .subscribe();
+      
+    return () => { supabase.removeChannel(channel); };
+
   }, [user]);
 
   const fetchAccount = async () => {
+    
     // Fetch account
-    const q = query(collection(db, 'accounts'), where('userId', '==', user.uid));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      setAccountId(querySnapshot.docs[0].id);
-      setAccount({ id: querySnapshot.docs[0].id, ...querySnapshot.docs[0].data() });
+    const { data: accData } = await supabase.from('accounts').select('*').eq('user_id', user.id);
+    if (accData && accData.length > 0) {
+      setAccountId(accData[0].id);
+      setAccount(accData[0]);
     }
     
     // Fetch user profile info
-    const userRef = doc(db, 'users', user.uid);
-    const userSnap = await getDoc(userRef);
-    if (userSnap.exists()) {
-      setUserData(userSnap.data());
+    const { data: userData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    if (userData) {
+      setUserData({ ...user, ...userData });
     }
+
   };
 
   useEffect(() => {
@@ -82,7 +88,7 @@ export default function Dashboard({ user }: { user: any }) {
 
   const handleAction = (tab: string) => {
     if (tab === 'logout') {
-      signOut(auth);
+      supabase.auth.signOut();
     } else {
       setActiveTab(tab);
       setIsMenuOpen(false);
@@ -152,8 +158,7 @@ export default function Dashboard({ user }: { user: any }) {
                        <p className="text-sm font-bold text-gray-900 mb-1">{notification.title}</p>
                        <p className="text-xs text-gray-500">{notification.message}</p>
                        <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">
-                         {notification.createdAt?.toDate ? 
-                           new Date(notification.createdAt.toDate()).toLocaleDateString() : 'Just now'}
+                         {notification.created_at ? new Date(notification.created_at).toLocaleDateString() : 'Just now'}
                        </p>
                     </div>
                   )) : (

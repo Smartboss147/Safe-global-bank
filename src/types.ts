@@ -1,5 +1,5 @@
 export interface User {
-  uid: string;
+  id: string;
   displayName: string;
   kycVerified: boolean;
   createdAt: string;

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { db } from '../../lib/firebase';
-import { doc, updateDoc, serverTimestamp, setDoc, collection, addDoc } from 'firebase/firestore';
+import { supabase } from '../../lib/supabase';
 import { UploadCloud, CheckCircle, FileText, AlertCircle } from 'lucide-react';
 
 export default function KYCUpload({ user, userData, onComplete }: any) {
@@ -24,28 +23,25 @@ export default function KYCUpload({ user, userData, onComplete }: any) {
     setLoading(true);
     try {
       // In a real app, upload file to Firebase Storage here
-      // const storageRef = ref(storage, `kyc/${user.uid}/${file.name}`);
+      // const storageRef = ref(storage, `kyc/${user.id}/${file.name}`);
       // await uploadBytes(storageRef, file);
       // const downloadURL = await getDownloadURL(storageRef);
       const downloadURL = 'mock_download_url'; // Mocking storage for simulation
       
       // Save metadata to Firestore 'kyc_documents' collection
-      await addDoc(collection(db, 'kyc_documents'), {
-        userId: user.uid,
-        firstName: userData?.firstName || 'Unknown',
-        lastName: userData?.lastName || 'User',
-        email: user.email,
-        documentType,
-        fileName: file.name,
-        fileUrl: downloadURL,
-        status: 'Pending',
-        uploadedAt: serverTimestamp(),
-      });
+      
+      await supabase.from('kyc_documents').insert([{
+        user_id: user.id,
+        document_type: documentType,
+        document_url: downloadURL,
+        status: 'pending'
+      }]);
+
 
       // Update user status
-      await updateDoc(doc(db, 'users', user.uid), {
-        kycStatus: 'Pending'
-      });
+      
+      await supabase.from('profiles').update({ kyc_status: 'Pending' }).eq('id', user.id);
+
 
       setSuccess(true);
       setTimeout(() => {

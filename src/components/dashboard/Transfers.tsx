@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { db } from '../../lib/firebase';
-import { collection, addDoc, doc, updateDoc, increment, serverTimestamp, getDocs, query, where, runTransaction } from 'firebase/firestore';
+import { supabase } from '../../lib/supabase';
+
 import { CheckCircle, XCircle, Download, AlertTriangle } from 'lucide-react';
 
 export default function Transfers({ user, account, fetchAccount }: any) {
@@ -59,68 +59,44 @@ export default function Transfers({ user, account, fetchAccount }: any) {
       let txDescription = reference || `${transferType} transfer to ${recipient}`;
 
       if (transferType === 'email') {
-        const qUser = query(collection(db, 'users'), where('email', '==', recipient.toLowerCase().trim()));
-        const userSnap = await getDocs(qUser);
-        if (userSnap.empty) {
+        const { data: userSnap, error: uErr } = await supabase.from('profiles').select('id, email').eq('email', recipient.toLowerCase().trim());
+        
+        if (!userSnap || userSnap.length(userSnap) === 0) {
           throw new Error('Recipient user not found.');
         }
-        const recipientUserDoc = userSnap.docs[0];
+        const recipientUserDoc = userSnap[0];
         const recipientUserId = recipientUserDoc.id;
 
-        const qAcc = query(collection(db, 'accounts'), where('userId', '==', recipientUserId));
-        const accSnap = await getDocs(qAcc);
-        if (accSnap.empty) {
+        const { data: accSnap, error: aErr } = await supabase.from('accounts').select('id').eq('user_id', recipientUserId);
+        
+        if (!accSnap || accSnap.length === 0) {
           throw new Error("Recipient doesn't have an active account.");
         }
-        const recipientAccountIdStr = accSnap.docs[0].id;
+        const recipientAccountIdStr = accSnap[0].id;
         
         let newDocId = '';
 
-        await runTransaction(db, async (transaction) => {
-          const senderUserRef = doc(db, 'users', user.uid);
-          const senderAccRef = doc(db, 'accounts', account.id);
-          const recipientUserRef = doc(db, 'users', recipientUserId);
-          const recipientAccRef = doc(db, 'accounts', recipientAccountIdStr);
+        
+// Call an RPC or do it sequentially in a real app
+const { data: senderAcc } = await supabase.from('accounts').select('balance').eq('id', account.id).single();
+if (!senderAcc || senderAcc.balance < val) throw new Error("Insufficient funds.");
 
-          const senderAccSnap = await transaction.get(senderAccRef);
-          if (!senderAccSnap.exists() || senderAccSnap.data().balance < val) {
-            throw new Error("Insufficient funds.");
-          }
+// This should ideally be an RPC to ensure atomicity
+await supabase.rpc('process_email_transfer', { 
+  sender_user_id: user.id, 
+  sender_account_id: account.id, 
+  recipient_user_id: recipientUserId, 
+  recipient_account_id: recipientAccountIdStr,
+  amount: val,
+  description: txDescription
+});
 
-          transaction.update(senderAccRef, { balance: increment(-val) });
-          transaction.update(senderUserRef, { balance: increment(-val) });
-          transaction.update(recipientAccRef, { balance: increment(val) });
-          transaction.update(recipientUserRef, { balance: increment(val) });
+newDocId = 'tx_' + Math.random().toString(36).substr(2, 9);
 
-          const senderTxRef = doc(collection(db, 'transactions'));
-          transaction.set(senderTxRef, {
-            userId: user.uid,
-            accountId: account.id,
-            type: 'transfer',
-            transferType: 'email',
-            amount: val,
-            recipient,
-            description: txDescription,
-            status: 'completed',
-            createdAt: serverTimestamp()
-          });
-          newDocId = senderTxRef.id;
-
-          const recipientTxRef = doc(collection(db, 'transactions'));
-          transaction.set(recipientTxRef, {
-            userId: recipientUserId,
-            accountId: recipientAccountIdStr,
-            type: 'deposit',
-            amount: val,
-            description: `Transfer from ${user.email} - ${reference}`,
-            status: 'completed',
-            createdAt: serverTimestamp()
-          });
-        });
 
         setReceiptData({
           id: newDocId,
-          userId: user.uid,
+          userId: user.id,
           accountId: account.id,
           type: 'transfer',
           transferType: 'email',
@@ -146,10 +122,10 @@ export default function Transfers({ user, account, fetchAccount }: any) {
 
       // Handle internal transfer (simulate finding the recipient)
       if (transferType === 'internal') {
-        const q = query(collection(db, 'accounts'), where('accountNumber', '==', recipient));
-        const querySnapshot = await getDocs(q);
-        if (!querySnapshot.empty) {
-          recipientAccountId = querySnapshot.docs[0].id;
+        const { data: querySnapshot } = await supabase.from('accounts').select('id').eq('account_number', recipient);
+        
+        if (querySnapshot && querySnapshot.length > 0) {
+          recipientAccountId = querySnapshot[0].id;
           transactionStatus = 'completed';
         } else {
           // Instead of failing immediately, internal transfers might be pending admin approval if not found?
@@ -160,7 +136,7 @@ export default function Transfers({ user, account, fetchAccount }: any) {
 
       // Add transaction record
       const txData = {
-        userId: user.uid,
+        userId: user.id,
         accountId: account.id,
         type: 'transfer',
         transferType, // internal, local, international, scheduled
@@ -174,34 +150,51 @@ export default function Transfers({ user, account, fetchAccount }: any) {
         createdAt: serverTimestamp()
       };
 
-      const docRef = await addDoc(collection(db, 'transactions'), txData);
+      const { data: insertedTx } = await supabase.from('transactions').insert([{
+  user_id: user.id,
+  account_id: account.id,
+  type: 'transfer',
+  transfer_type: transferType,
+  amount: val,
+  recipient: recipient,
+  swift_code: transferType === 'international' ? swiftCode : null,
+  bank_name: bankName,
+  description: txDescription,
+  status: transactionStatus,
+  schedule_date: transferType === 'scheduled' ? scheduleDate : null
+}]).select().single();
+const docRef = { id: insertedTx?.id || 'pending' };
 
       // Deduct from sender immediately (even if pending for realism in this sim)
-      await updateDoc(doc(db, 'accounts', account.id), {
-        balance: increment(-val)
-      });
+      
+const { data: currAcc } = await supabase.from('accounts').select('balance').eq('id', account.id).single();
+if(currAcc) {
+  await supabase.from('accounts').update({ balance: currAcc.balance - val }).eq('id', account.id);
+}
+
 
       // If internal and completed, add to recipient immediately
       if (recipientAccountId && transactionStatus === 'completed') {
-        await updateDoc(doc(db, 'accounts', recipientAccountId), {
-          balance: increment(val)
-        });
+        
+await supabase.rpc('increment_balance', { account_id_param: recipientAccountId, amount_param: val });
+
         
         // Also add a deposit transaction for the recipient
-        await addDoc(collection(db, 'transactions'), {
-          userId: 'system', // we don't have the recipient's uid handy but can just put a system flag
-          accountId: recipientAccountId,
-          type: 'deposit',
-          amount: val,
-          description: `Transfer from ${account.accountNumber} - ${reference}`,
-          status: 'completed',
-          createdAt: serverTimestamp()
-        });
+        
+await supabase.from('transactions').insert([{
+  user_id: user.id, // mocked
+  account_id: recipientAccountId,
+  type: 'deposit',
+  amount: val,
+  description: `Transfer from ${account.account_number || account.accountNumber} - ${reference}`,
+  status: 'completed'
+}]);
+
       }
 
       setReceiptData({
         id: docRef.id,
-        ...txData,
+         
         date: new Date().toLocaleString()
       });
       

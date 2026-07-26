@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ShieldCheck, Bell, Globe, User, CreditCard, ChevronRight, Fingerprint, Lock, Smartphone, Camera, Save, X, AlertCircle } from 'lucide-react';
-import { db } from '../../lib/firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { supabase } from '../../lib/supabase';
+
 import KYCUpload from './KYCUpload';
 
 export default function Settings({ user, userData, fetchAccount }: any) {
@@ -16,11 +16,11 @@ export default function Settings({ user, userData, fetchAccount }: any) {
   useEffect(() => {
     if (userData) {
       setFormData({
-        firstName: userData.firstName || '',
-        lastName: userData.lastName || '',
+        firstName: userData.first_name || '',
+        lastName: userData.last_name || '',
         phone: userData.phone || '',
         address: userData.address || '',
-        displayName: userData.displayName || ''
+        displayName: userData.display_name || ''
       });
     }
   }, [userData]);
@@ -53,7 +53,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
     if (!userData || !userData.uid) return;
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), formData);
+      await updateDoc(doc(db, 'users', user.id), formData);
       await fetchAccount();
       setIsEditing(false);
     } catch (error) {
@@ -64,7 +64,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
     }
   };
 
-  const kycStatus = userData?.kycStatus || 'Unverified';
+  const kycStatus = userData?.kyc_status || 'Unverified';
 
   if (showKyc) {
     return (
@@ -86,7 +86,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
         <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
         <div className="w-24 h-24 mx-auto rounded-full bg-white/10 p-1 mb-4 relative z-10 group cursor-pointer">
           <div className="w-full h-full rounded-full overflow-hidden border-2 border-white relative">
-            <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.displayName || userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
+            <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.display_name || userData?.first_name || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                <Camera className="text-white" size={24} />
             </div>
@@ -101,7 +101,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
             </button>
           )}
         </div>
-        <h2 className="text-2xl font-bold text-white relative z-10">{userData?.displayName || `${userData?.firstName} ${userData?.lastName}`}</h2>
+        <h2 className="text-2xl font-bold text-white relative z-10">{userData?.display_name || `${userData?.first_name} ${userData?.last_name}`}</h2>
         <p className="text-white/70 text-sm mb-4 relative z-10">{user?.email}</p>
         
         <div 
@@ -164,11 +164,11 @@ export default function Settings({ user, userData, fetchAccount }: any) {
               <div className="space-y-4">
                 <div className="flex justify-between border-b border-gray-100 pb-3">
                   <span className="text-gray-500 text-sm">Display Name</span>
-                  <span className="font-semibold text-gray-900">{userData?.displayName || 'Not set'}</span>
+                  <span className="font-semibold text-gray-900">{userData?.display_name || 'Not set'}</span>
                 </div>
                 <div className="flex justify-between border-b border-gray-100 pb-3">
                   <span className="text-gray-500 text-sm">Full Name</span>
-                  <span className="font-semibold text-gray-900">{userData?.firstName} {userData?.lastName}</span>
+                  <span className="font-semibold text-gray-900">{userData?.first_name} {userData?.last_name}</span>
                 </div>
                 <div className="flex justify-between border-b border-gray-100 pb-3">
                   <span className="text-gray-500 text-sm">Phone</span>
@@ -184,7 +184,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
                 </div>
                 <div className="flex justify-between border-b border-gray-100 pb-3">
                   <span className="text-gray-500 text-sm">Account Created</span>
-                  <span className="font-semibold text-gray-900">{getFormattedDate(userData?.createdAt)}</span>
+                  <span className="font-semibold text-gray-900">{getFormattedDate(userData?.created_at)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500 text-sm">KYC Status</span>
@@ -217,7 +217,7 @@ export default function Settings({ user, userData, fetchAccount }: any) {
             </button>
             <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100" onClick={() => {
                  const current = userData?.biometricLogin || false;
-                 updateDoc(doc(db, 'users', user.uid), { biometricLogin: !current });
+                 updateDoc(doc(db, 'users', user.id), { biometricLogin: !current });
                  fetchAccount();
             }}>
               <div className="flex items-center gap-3">
