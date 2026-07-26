@@ -27,6 +27,7 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [walletAmount, setWalletAmount] = useState('');
   const [walletReason, setWalletReason] = useState('');
   const [adminRole, setAdminRole] = useState<'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT'>('SUPER_ADMIN');
+  const [isAdminProfileDropdownOpen, setIsAdminProfileDropdownOpen] = useState(false);
   
   const navigate = useNavigate();
 
@@ -173,6 +174,7 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   return (
     <div className="max-w-7xl mx-auto p-4 md:p-8">
+
       {/* Top Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
@@ -200,6 +202,32 @@ export default function AdminDashboard({ user }: { user: any }) {
           >
             <RefreshCw size={16} /> Refresh
           </button>
+          
+          <div className="relative">
+            <button className="w-10 h-10 rounded-full bg-blue-100 text-blue-900 overflow-hidden border-2 border-white shadow-sm hover:ring-2 hover:ring-blue-500 transition-all flex items-center justify-center font-bold" onClick={() => setIsAdminProfileDropdownOpen(!isAdminProfileDropdownOpen)}>
+              {user?.email?.[0].toUpperCase() || 'A'}
+            </button>
+            
+            {isAdminProfileDropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsAdminProfileDropdownOpen(false)} />
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl z-50 border border-gray-100 py-2">
+                  <div className="px-4 py-3 border-b border-gray-100">
+                    <p className="text-sm font-bold text-gray-900 truncate">Administrator</p>
+                    <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                  </div>
+                  <div className="py-1">
+                    <button 
+                      onClick={async () => { setIsAdminProfileDropdownOpen(false); await supabase.auth.signOut(); navigate('/'); }} 
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 font-bold"
+                    >
+                      <LogOut size={16} /> Sign Out
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -249,7 +277,6 @@ export default function AdminDashboard({ user }: { user: any }) {
                 <Users size={24} />
               </div>
             </div>
-
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total System Liquidity</p>
@@ -260,113 +287,43 @@ export default function AdminDashboard({ user }: { user: any }) {
                 <DollarSign size={24} />
               </div>
             </div>
-
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Transactions</p>
                 <h3 className="text-3xl font-extrabold text-gray-900 mt-1">{totalTransactions}</h3>
                 <p className="text-xs text-amber-600 font-semibold mt-1">{pendingTransactions} pending review</p>
               </div>
-              <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center">
                 <ArrowRightLeft size={24} />
               </div>
             </div>
-
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">KYC Verification Rate</p>
-                <h3 className="text-3xl font-extrabold text-gray-900 mt-1">{totalUsers ? Math.round((verifiedUsers / totalUsers) * 100) : 0}%</h3>
-                <p className="text-xs text-purple-600 font-semibold mt-1">{verifiedUsers} of {totalUsers} verified</p>
+                <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">KYC Verified</p>
+                <h3 className="text-3xl font-extrabold text-gray-900 mt-1">{verifiedUsers}</h3>
+                <p className="text-xs text-indigo-600 font-semibold mt-1">{totalUsers - verifiedUsers} pending/rejected</p>
               </div>
-              <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center">
+              <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
                 <ShieldCheck size={24} />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-lg font-bold text-gray-900">Recent System Activity & Audit Trail</h3>
-                <button onClick={() => setActiveTab('audit')} className="text-sm font-bold text-blue-600 hover:underline">View All</button>
-              </div>
-              <div className="space-y-4">
-                {auditLogs.slice(0, 6).map((log, idx) => (
-                  <div key={idx} className="flex items-start justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 rounded-md text-xs font-bold">{log.action}</span>
-                        <span className="text-xs text-gray-400">{new Date(log.created_at).toLocaleString()}</span>
-                      </div>
-                      <p className="text-sm font-medium text-gray-800 mt-1.5">{log.details}</p>
-                      <p className="text-xs text-gray-500 mt-1">Admin: <span className="font-semibold">{log.adminName}</span></p>
-                    </div>
-                  </div>
-                ))}
-                {auditLogs.length === 0 && (
-                  <p className="text-center text-gray-400 py-6 text-sm font-medium">No audit logs recorded yet.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Operational Actions</h3>
-                <div className="space-y-3">
-                  <button 
-                    onClick={() => setActiveTab('users')}
-                    className="w-full text-left p-3.5 bg-gray-50 hover:bg-blue-50 hover:text-blue-900 rounded-xl font-bold text-sm text-gray-700 transition flex items-center justify-between"
-                  >
-                    <span>Manage User Accounts</span>
-                    <Users size={16} />
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('wallets')}
-                    className="w-full text-left p-3.5 bg-gray-50 hover:bg-green-50 hover:text-green-900 rounded-xl font-bold text-sm text-gray-700 transition flex items-center justify-between"
-                  >
-                    <span>Credit / Debit Wallets</span>
-                    <DollarSign size={16} />
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('transactions')}
-                    className="w-full text-left p-3.5 bg-gray-50 hover:bg-amber-50 hover:text-amber-900 rounded-xl font-bold text-sm text-gray-700 transition flex items-center justify-between"
-                  >
-                    <span>Review Pending Transfers</span>
-                    <ArrowRightLeft size={16} />
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('compliance')}
-                    className="w-full text-left p-3.5 bg-gray-50 hover:bg-purple-50 hover:text-purple-900 rounded-xl font-bold text-sm text-gray-700 transition flex items-center justify-between"
-                  >
-                    <span>Review KYC Documents</span>
-                    <ShieldCheck size={16} />
-                  </button>
-                </div>
-              </div>
-              <div className="mt-6 pt-4 border-t border-gray-100">
-                <div className="p-4 bg-blue-50/50 rounded-xl border border-blue-100">
-                  <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">Security Status</p>
-                  <p className="text-xs text-blue-700 mt-1 font-medium">All systems operational. Supabase & PostgreSQL connection verified.</p>
-                </div>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: USERS */}
+      {/* TAB 2: USER MANAGEMENT */}
       {activeTab === 'users' && (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
-            <h2 className="text-xl font-bold text-gray-900">User Management Directory ({users.length})</h2>
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                type="text"
-                placeholder="Search by name or email..."
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+            <h2 className="text-xl font-bold text-gray-900">User Management</h2>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input 
+                type="text" 
+                placeholder="Search users by name or email..." 
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-900"
+                className="w-full sm:w-80 pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-900"
               />
             </div>
           </div>
@@ -376,10 +333,10 @@ export default function AdminDashboard({ user }: { user: any }) {
               <thead className="bg-gray-50 text-xs uppercase font-bold text-gray-500">
                 <tr>
                   <th className="p-4 border-b">User</th>
-                  <th className="p-4 border-b">Account No.</th>
+                  <th className="p-4 border-b">Account</th>
                   <th className="p-4 border-b">Balance</th>
-                  <th className="p-4 border-b">KYC Status</th>
-                  <th className="p-4 border-b">Role / Status</th>
+                  <th className="p-4 border-b">KYC</th>
+                  <th className="p-4 border-b">Status</th>
                   <th className="p-4 border-b text-right">Actions</th>
                 </tr>
               </thead>
@@ -411,25 +368,15 @@ export default function AdminDashboard({ user }: { user: any }) {
                         </span>
                       </td>
                       <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                            u.role === 'admin' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {u.role || 'user'}
-                          </span>
-                          {u.status === 'suspended' && (
-                            <span className="px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold">Suspended</span>
-                          )}
-                        </div>
+                         <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${u.status === 'suspended' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                            {u.status === 'suspended' ? 'Suspended' : 'Active'}
+                         </span>
                       </td>
                       <td className="p-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button 
-                            onClick={() => {
-                              setSelectedUser({ ...u, account: acc });
-                              setIsEditModalOpen(true);
-                            }}
-                            title="Edit / Privileges"
+                            onClick={() => { setSelectedUser(u); setIsEditModalOpen(true); }}
+                            title="Edit User"
                             className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition"
                           >
                             <Edit3 size={16} />
@@ -446,10 +393,33 @@ export default function AdminDashboard({ user }: { user: any }) {
                             <UserX size={16} />
                           </button>
                           <button 
-                            onClick={() => {
+                            onClick={async () => {
                               if (confirm(`Delete user ${u.email}? This action is permanent.`)) {
-                                logAuditAction('USER_DELETED', u.id, `Deleted user ${u.email}`);
-                                setMsg({ type: 'success', text: 'User deleted successfully.' });
+                                try {
+                                  const session = await supabase.auth.getSession();
+                                  const token = session.data.session?.access_token;
+                                  if (!token) throw new Error('No auth token');
+                                  
+                                  const res = await fetch('/api/admin/delete-user', {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      'Authorization': `Bearer ${token}`
+                                    },
+                                    body: JSON.stringify({ userId: u.id })
+                                  });
+                                  
+                                  if (!res.ok) {
+                                    const data = await res.json();
+                                    throw new Error(data.error || 'Failed to delete user');
+                                  }
+                                  
+                                  logAuditAction('USER_DELETED', u.id, `Deleted user ${u.email}`);
+                                  setMsg({ type: 'success', text: 'User deleted successfully.' });
+                                  fetchData();
+                                } catch (e: any) {
+                                  setMsg({ type: 'error', text: e.message || 'Error deleting user' });
+                                }
                               }
                             }}
                             title="Delete User"
@@ -471,6 +441,7 @@ export default function AdminDashboard({ user }: { user: any }) {
       )}
 
       {/* TAB 3: WALLETS */}
+
       {activeTab === 'wallets' && (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-6">
           <div className="flex items-center justify-between">
@@ -735,7 +706,8 @@ export default function AdminDashboard({ user }: { user: any }) {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                 <button
                   onClick={() => {
                     handleUserStatusUpdate(selectedUser.id, 'role', selectedUser.role, 'ROLE_UPDATED');
@@ -746,16 +718,39 @@ export default function AdminDashboard({ user }: { user: any }) {
                   Save Changes
                 </button>
                 <button
-                  onClick={() => {
-                    alert(`Password reset email sent to ${selectedUser.email}`);
-                    logAuditAction('PASSWORD_RESET', selectedUser.id, `Triggered password reset for ${selectedUser.email}`);
-                    setIsEditModalOpen(false);
+                  onClick={async () => {
+                    try {
+                      const { error } = await supabase.auth.resetPasswordForEmail(selectedUser.email);
+                      if (error) throw error;
+                      alert(`Password reset email sent to ${selectedUser.email}`);
+                      logAuditAction('PASSWORD_RESET', selectedUser.id, `Triggered password reset for ${selectedUser.email}`);
+                      setIsEditModalOpen(false);
+                    } catch (err: any) {
+                      alert('Failed to send reset email: ' + err.message);
+                    }
                   }}
                   className="py-3 bg-gray-100 text-gray-800 rounded-xl font-bold text-sm hover:bg-gray-200 transition"
                 >
                   Reset Password
                 </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const { error } = await supabase.from('profiles').update({ transaction_pin: null }).eq('id', selectedUser.id);
+                      if (error) throw error;
+                      alert(`Transaction PIN reset for ${selectedUser.email}`);
+                      logAuditAction('PIN_RESET', selectedUser.id, `Reset transaction PIN for ${selectedUser.email}`);
+                      setIsEditModalOpen(false);
+                    } catch (err: any) {
+                      alert('Failed to reset PIN: ' + err.message);
+                    }
+                  }}
+                  className="py-3 bg-amber-50 text-amber-700 rounded-xl font-bold text-sm hover:bg-amber-100 transition sm:col-span-2"
+                >
+                  Reset Transaction PIN
+                </button>
               </div>
+
             </div>
           </div>
         </div>
