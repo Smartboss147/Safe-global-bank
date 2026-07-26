@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
 
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react';
 
 export default function Dashboard({ user }: { user: any }) {
+  const navigate = useNavigate();
   const [account, setAccount] = useState<any>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
   const [userData, setUserData] = useState<any>(null);
@@ -33,6 +35,26 @@ export default function Dashboard({ user }: { user: any }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    async function checkAdmin() {
+      if (!user) return;
+      try {
+        const { data } = await supabase
+          .from('admins')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .single();
+        if (data) {
+          navigate('/admin', { replace: true });
+        }
+      } catch (err) {
+        console.error('Error checking admin status:', err);
+      }
+    }
+    checkAdmin();
+  }, [user, navigate]);
+
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);

@@ -28,29 +28,32 @@ export default function LoginForm({ user }: { user?: any }) {
   const [showSignupPassword, setShowSignupPassword] = useState(false);
   const [showConfirmSignupPassword, setShowConfirmSignupPassword] = useState(false);
 
+
   // Handle existing user
   useEffect(() => {
     async function checkRole() {
       if (user) {
-        // Instantly navigate to home to show the Dashboard, preventing any lagging or iframe/Firestore block from keeping them on login screen
-        navigate('/');
         try {
           const { data, error } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
+            .from('admins')
+            .select('user_id')
+            .eq('user_id', user.id)
             .single();
             
-          if (data && data.role === 'admin') {
+          if (data) {
             navigate('/admin');
+          } else {
+            navigate('/');
           }
         } catch (err) {
           console.error('Error verifying user role in Supabase:', err);
+          navigate('/');
         }
       }
     }
     checkRole();
   }, [user, navigate]);
+
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

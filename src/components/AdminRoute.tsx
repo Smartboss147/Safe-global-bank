@@ -12,14 +12,16 @@ export default function AdminRoute({ user, children }: any) {
         return;
       }
       try {
+        
         const { data, error } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
+          .from('admins')
+          .select('user_id')
+          .eq('user_id', user.id)
           .single();
           
-        if (data && data.role === 'admin') {
+        if (data) {
           setIsAdmin(true);
+
         } else {
           setIsAdmin(false);
         }

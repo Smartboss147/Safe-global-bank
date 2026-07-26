@@ -17,13 +17,15 @@ export default function AdminLogin({ user }: { user?: any }) {
     async function checkExistingUser() {
       if (user) {
         try {
+          
           const { data, error } = await supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', user.id)
+            .from('admins')
+            .select('user_id')
+            .eq('user_id', user.id)
             .single();
             
-          if (data && data.role === 'admin') {
+          if (data) {
+
             navigate('/admin');
           } else {
             // Not an admin, don't auto-redirect to admin dashboard. 
@@ -47,13 +49,15 @@ export default function AdminLogin({ user }: { user?: any }) {
       if (authError) throw authError;
       
       // Verify admin role
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
+      
+      const { data: adminData, error: adminError } = await supabase
+        .from('admins')
+        .select('user_id')
+        .eq('user_id', data.user.id)
         .single();
         
-      if (profile && profile.role === 'admin') {
+      if (adminData) {
+
         navigate('/admin');
       } else {
         await logout();
