@@ -156,9 +156,9 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   const filteredUsers = users.filter(u => 
     u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.lastName?.toLowerCase().includes(searchQuery.toLowerCase())
+    (u.display_name || u.displayName || '')?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (u.first_name || u.firstName || '')?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (u.last_name || u.lastName || '')?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   if (loading && users.length === 0) {

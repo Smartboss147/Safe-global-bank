@@ -50,15 +50,22 @@ export default function Settings({ user, userData, fetchAccount }: any) {
   };
 
   const handleSaveProfile = async () => {
-    if (!userData || !userData.uid) return;
+    if (!user) return;
     setLoading(true);
     try {
-      await updateDoc(doc(db, 'users', user.id), formData);
+      const { error } = await supabase.from('profiles').update({
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        phone: formData.phone,
+        address: formData.address,
+        display_name: formData.displayName
+      }).eq('id', user.id);
+      if (error) throw error;
       await fetchAccount();
       setIsEditing(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating profile", error);
-      alert("Failed to update profile.");
+      alert("Failed to update profile: " + (error.message || 'Error occurred'));
     } finally {
       setLoading(false);
     }
@@ -215,9 +222,9 @@ export default function Settings({ user, userData, fetchAccount }: any) {
               </div>
               <ChevronRight size={20} className="text-gray-400" />
             </button>
-            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100" onClick={() => {
-                 const current = userData?.biometricLogin || false;
-                 updateDoc(doc(db, 'users', user.id), { biometricLogin: !current });
+            <button className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition border-b border-gray-100" onClick={async () => {
+                 const current = userData?.biometric_login || false;
+                 await supabase.from('profiles').update({ biometric_login: !current }).eq('id', user.id);
                  fetchAccount();
             }}>
               <div className="flex items-center gap-3">

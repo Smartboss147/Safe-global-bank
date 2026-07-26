@@ -80,8 +80,8 @@ app.post('/api/admin/update-balance', verifyAdmin, async (req, res) => {
     
     // Log audit
     await supabaseAdmin.from('audit_logs').insert([{
-      admin_id: req.admin.id,
-      admin_email: req.admin.email,
+      admin_id: (req as any).admin?.id || 'admin',
+      admin_email: (req as any).admin?.email || 'admin@safeglobal.com',
       action: 'WALLET_ADJUSTMENT',
       target_user: targetUserId || accountId,
       details: `Changed balance from $${oldBalance} to $${newBalance}. Reason: ${reason}`,

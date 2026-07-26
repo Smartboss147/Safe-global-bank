@@ -106,20 +106,37 @@ export default function LoginForm({ user }: { user?: any }) {
       const { data: userCredential, error: signupError } = await signup(signupData.email, signupData.password);
       if (signupError) throw signupError;
       
-      // Create initial account just in case so dashboard works
+      // Create initial account and profile record with complete signup information
       if (userCredential?.user) {
         try {
+          // Upsert complete profile details
+          await supabase.from('profiles').upsert({
+            id: userCredential.user.id,
+            email: signupData.email,
+            first_name: signupData.firstName,
+            last_name: signupData.lastName,
+            display_name: `${signupData.firstName} ${signupData.lastName}`,
+            phone: signupData.phone,
+            address: signupData.address,
+            city: signupData.city,
+            state: signupData.state,
+            zip: signupData.zip,
+            country: signupData.country,
+            pin: signupData.pin,
+            kyc_status: 'Unverified',
+            role: 'user',
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+
+          // Create initial bank account
           await supabase.from('accounts').insert({
             user_id: userCredential.user.id,
-            account_number: '9424' + Math.floor(Math.random() * 1000000),
-            balance: 0,
+            account_number: '9424' + Math.floor(100000 + Math.random() * 900000),
+            balance: 1000, // Welcome deposit
             currency: 'USD',
-            account_type: signupData.accountType
+            account_type: signupData.accountType,
+            status: 'active'
           });
-          
-          await supabase.from('profiles').update({
-            display_name: `${signupData.firstName} ${signupData.lastName}`,
-          }).eq('id', userCredential.user.id);
         } catch (dbErr) {
           console.error('Error creating user profile/account docs:', dbErr);
         }

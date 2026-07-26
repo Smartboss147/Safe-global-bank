@@ -18,6 +18,7 @@ import Loans from './dashboard/Loans';
 import Settings from './dashboard/Settings';
 import SecurityCenter from './dashboard/SecurityCenter';
 import CustomerSupport from './dashboard/CustomerSupport';
+import IRSRefund from './dashboard/IRSRefund';
 import { 
   Menu, Bell, Eye, EyeOff, Activity, CreditCard, LayoutGrid, 
   Send, Globe, Download, HandCoins, Receipt, HelpCircle, LogOut, 
@@ -130,6 +131,7 @@ export default function Dashboard({ user }: { user: any }) {
       case 'savings': return <div className="p-4"><Savings user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'investments': return <div className="p-4"><Investments user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'loans': return <div className="p-4"><Loans user={user} account={account} fetchAccount={fetchAccount} /></div>;
+      case 'irs-refund': return <div className="p-4"><IRSRefund user={user} account={account} /></div>;
       case 'security': return <div className="p-4"><SecurityCenter user={user} userData={userData} /></div>;
       case 'settings': return <div className="p-4"><Settings user={user} userData={userData} fetchAccount={fetchAccount} /></div>;
       case 'support': return <div className="p-4"><CustomerSupport user={user} /></div>;
@@ -144,10 +146,10 @@ export default function Dashboard({ user }: { user: any }) {
       {/* Top Header */}
       <header className="px-5 py-4 flex items-center justify-between bg-transparent relative z-10">
         <div className="flex items-center gap-3">
-          <button className="p-2 -ml-2 rounded-full hover:bg-gray-100 transition" onClick={() => activeTab !== 'overview' && setActiveTab('overview')}>
+          <button className="p-2 -ml-2 rounded-full hover:bg-gray-100 transition" onClick={() => activeTab !== 'overview' ? setActiveTab('overview') : setIsMenuOpen(!isMenuOpen)}>
             {activeTab !== 'overview' ? <ChevronLeft size={24} /> : <Menu size={24} />}
           </button>
-          <div className="font-extrabold text-lg flex items-center gap-2">
+          <div className="font-extrabold text-lg flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('overview')}>
             <span className="bg-gradient-to-br from-blue-700 to-indigo-800 text-transparent bg-clip-text">SAFE</span>
             <span className="text-gray-900">GLOBAL</span>
           </div>
@@ -259,7 +261,10 @@ export default function Dashboard({ user }: { user: any }) {
                     <p className="text-sm text-gray-500">Account: {account ? account.accountNumber : 'Loading...'}</p>
                   </div>
                 </div>
-                <button className="text-red-500 bg-red-50 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
+                <button 
+                  onClick={() => { setIsMenuOpen(false); setActiveTab('security'); }}
+                  className="text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 transition"
+                >
                    Verify Account
                 </button>
               </div>
@@ -279,7 +284,7 @@ export default function Dashboard({ user }: { user: any }) {
                   { id: 'trading', icon: <BarChart2 />, label: 'Trading', color: 'bg-indigo-100 text-indigo-700' },
                   { id: 'payments', icon: <Download />, label: 'Deposit', color: 'bg-green-100 text-green-700' },
                   { id: 'loans', icon: <Wallet />, label: 'Loan', color: 'bg-orange-100 text-orange-700' },
-                  { id: 'payments', icon: <Receipt />, label: 'IRS Refund', color: 'bg-green-100 text-green-700' },
+                  { id: 'irs-refund', icon: <Receipt />, label: 'IRS Refund', color: 'bg-purple-100 text-purple-700' },
                   { id: 'settings', icon: <SettingsIcon />, label: 'Settings', color: 'bg-green-100 text-green-700' },
                   { id: 'support', icon: <HelpCircle />, label: 'Support', color: 'bg-yellow-100 text-yellow-700' },
                   { id: 'logout', icon: <LogOut />, label: 'Logout', color: 'bg-red-50 text-red-600' }
@@ -329,6 +334,11 @@ export default function Dashboard({ user }: { user: any }) {
 }
 
 function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
+  const accNum = account?.account_number || account?.accountNumber || '';
+  const fullName = userData?.display_name || (userData?.first_name ? `${userData.first_name} ${userData.last_name}` : (userData?.firstName ? `${userData.firstName} ${userData.lastName}` : 'Valued Customer'));
+  const avatarSrc = userData?.avatar_url || userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${fullName}`;
+  const accountStatus = account?.status || 'active';
+
   return (
     <div className="px-4 pb-6 space-y-6">
       {/* Balance Card */}
@@ -340,11 +350,11 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
         <div className="relative z-10 flex justify-between items-start mb-6">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/20">
-              <img src="https://api.dicebear.com/7.x/avataaars/svg?seed=Felix" alt="Profile" className="w-full h-full object-cover" />
+              <img src={avatarSrc} alt="Profile" className="w-full h-full object-cover" />
             </div>
             <div>
               <p className="text-white/80 text-sm font-medium">{greeting}</p>
-              <h2 className="text-lg font-bold">{userData ? `${userData.firstName} ${userData.lastName}` : 'Welcome Back'}</h2>
+              <h2 className="text-lg font-bold">{fullName}</h2>
             </div>
           </div>
           <div className="text-right">
@@ -361,30 +371,41 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
             </button>
           </div>
           <h1 className="text-[2.5rem] font-bold tracking-tight">
-            {account ? (showBalance ? `$${account.balance.toLocaleString(undefined, { minimumFractionDigits: 2 })} USD` : '••••••••') : 'Loading...'}
+            {account ? (showBalance ? `$${(account.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} USD` : '••••••••') : 'Loading...'}
           </h1>
         </div>
 
         <div className="relative z-10 flex justify-between items-end">
           <div className="flex items-center gap-3 bg-white/10 backdrop-blur-md py-2 px-4 rounded-xl border border-white/10">
             <div className="w-6 h-6 rounded bg-white/20 flex items-center justify-center">
-              <span className="text-[10px] font-bold">SH</span>
+              <span className="text-[10px] font-bold">SG</span>
             </div>
             <div>
               <p className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">Your Account Number</p>
               <div className="flex items-center gap-2">
-                <p className="font-mono text-sm tracking-wider">{account ? account.accountNumber.replace(/(\d{4})/g, '$1 ').trim() : '****'}</p>
-                <span className="px-1.5 py-0.5 bg-red-500/20 text-red-300 text-[10px] font-bold rounded flex items-center gap-1">
-                  <div className="w-1 h-1 rounded-full bg-red-400" /> Inactive
+                <p className="font-mono text-sm tracking-wider">{accNum ? accNum.replace(/(\d{4})/g, '$1 ').trim() : '••••••••'}</p>
+                <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded flex items-center gap-1 ${
+                  accountStatus.toLowerCase() === 'active' 
+                    ? 'bg-emerald-500/20 text-emerald-300' 
+                    : 'bg-amber-500/20 text-amber-300'
+                }`}>
+                  <div className={`w-1 h-1 rounded-full ${accountStatus.toLowerCase() === 'active' ? 'bg-emerald-400' : 'bg-amber-400'}`} /> 
+                  {accountStatus.charAt(0).toUpperCase() + accountStatus.slice(1)}
                 </span>
               </div>
             </div>
           </div>
           <div className="flex flex-col gap-2">
-            <button className="px-4 py-1.5 bg-white text-[#0A3D36] text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-transform flex items-center gap-1 justify-center">
+            <button 
+              onClick={() => setActiveTab('history')}
+              className="px-4 py-1.5 bg-white text-[#0A3D36] text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-transform flex items-center gap-1 justify-center"
+            >
               <Activity size={12} /> Transactions
             </button>
-            <button className="px-4 py-1.5 bg-[#1A6D60] text-white text-xs font-bold rounded-lg shadow-sm border border-white/20 active:scale-95 transition-transform flex items-center gap-1 justify-center">
+            <button 
+              onClick={() => setActiveTab('payments')}
+              className="px-4 py-1.5 bg-[#1A6D60] text-white text-xs font-bold rounded-lg shadow-sm border border-white/20 active:scale-95 transition-transform flex items-center gap-1 justify-center"
+            >
               <CreditCard size={12} /> Top up
             </button>
           </div>
@@ -397,28 +418,34 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
         <p className="text-gray-500 text-sm mb-6">Choose from our popular actions below</p>
         
         <div className="grid grid-cols-2 gap-4">
-          <div className="bg-gray-50 border border-gray-100 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform">
+          <div 
+            onClick={() => setActiveTab('settings')}
+            className="bg-gray-50 border border-gray-100 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-gray-100/80"
+          >
             <div className="w-12 h-12 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center mb-3">
               <Wallet size={24} />
             </div>
             <span className="font-bold text-gray-800">Account Info</span>
           </div>
           
-          <div className="bg-[#E6F0A3] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform" onClick={() => setActiveTab('transfers')}>
+          <div className="bg-[#E6F0A3] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#dce892]" onClick={() => setActiveTab('transfers')}>
             <div className="w-12 h-12 bg-[#D1DF7B] text-[#55601C] rounded-full flex items-center justify-center mb-3">
               <Send size={24} />
             </div>
             <span className="font-bold text-gray-800">Send Money</span>
           </div>
 
-          <div className="bg-[#E6F9EC] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform">
+          <div 
+            onClick={() => { const btn = document.querySelector('header button'); if (btn) (btn as HTMLElement).click(); }}
+            className="bg-[#E6F9EC] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#d4f3dd]"
+          >
             <div className="text-green-600 mb-2">
               <span className="text-4xl font-light">+</span>
             </div>
             <span className="font-bold text-gray-800">More</span>
           </div>
 
-          <div className="bg-[#F5F0FF] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform" onClick={() => setActiveTab('history')}>
+          <div className="bg-[#F5F0FF] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#eae0fa]" onClick={() => setActiveTab('history')}>
             <div className="w-12 h-12 bg-[#E6DDF5] text-[#6B44A8] rounded-full flex items-center justify-center mb-3">
               <History size={24} />
             </div>

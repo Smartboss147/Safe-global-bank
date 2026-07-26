@@ -61,7 +61,7 @@ export default function Transfers({ user, account, fetchAccount }: any) {
       if (transferType === 'email') {
         const { data: userSnap, error: uErr } = await supabase.from('profiles').select('id, email').eq('email', recipient.toLowerCase().trim());
         
-        if (!userSnap || userSnap.length(userSnap) === 0) {
+        if (!userSnap || userSnap.length === 0) {
           throw new Error('Recipient user not found.');
         }
         const recipientUserDoc = userSnap[0];
@@ -135,21 +135,6 @@ newDocId = 'tx_' + Math.random().toString(36).substr(2, 9);
       }
 
       // Add transaction record
-      const txData = {
-        userId: user.id,
-        accountId: account.id,
-        type: 'transfer',
-        transferType, // internal, local, international, scheduled
-        amount: val,
-        recipient,
-        swiftCode: transferType === 'international' ? swiftCode : null,
-        bankName: bankName,
-        description: txDescription,
-        status: transactionStatus, // internal can be completed immediately, others pending
-        scheduleDate: transferType === 'scheduled' ? scheduleDate : null,
-        createdAt: serverTimestamp()
-      };
-
       const { data: insertedTx } = await supabase.from('transactions').insert([{
   user_id: user.id,
   account_id: account.id,
