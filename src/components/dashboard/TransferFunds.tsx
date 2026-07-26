@@ -144,7 +144,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
           transfer_type: transferType,
           amount: val,
           recipient: recipient.trim(),
-          bank_name: bankName.trim() || 'NexaBank',
+          bank_name: bankName.trim() || 'Safe Global Bank',
           swift_code: swiftCode.trim() || null,
           description: txDescription,
           status: txStatus,
@@ -210,7 +210,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
         recipient: recipient.trim(),
         amount: val,
         type: transferType,
-        bankName: bankName || 'NexaBank Network',
+        bankName: bankName || 'Safe Global Bank Network',
         status: txStatus,
         date: new Date().toLocaleString()
       };
@@ -252,7 +252,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
 
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(18);
-      doc.text('NexaBank Official Transfer Receipt', 14, 20);
+      doc.text('Safe Global Bank Official Transfer Receipt', 14, 20);
 
       doc.setTextColor(40, 40, 40);
       doc.setFontSize(10);
@@ -275,7 +275,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
         styles: { fontSize: 10 }
       });
 
-      doc.save(`NexaBank_Transfer_${receiptData.id}.pdf`);
+      doc.save(`SafeGlobalBank_Transfer_${receiptData.id}.pdf`);
     } catch (err) {
       console.error('Error printing receipt PDF:', err);
       alert('Unable to generate PDF receipt.');
@@ -522,7 +522,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
               </div>
 
               <p className="text-xs text-gray-500 leading-relaxed">
-                By confirming, you authorize NexaBank to deduct <span className="font-bold text-gray-800">${parseFloat(amount || '0').toFixed(2)}</span> from your account and process the funds to <span className="font-bold text-gray-800">{recipient}</span>.
+                By confirming, you authorize Safe Global Bank to deduct <span className="font-bold text-gray-800">${parseFloat(amount || '0').toFixed(2)}</span> from your account and process the funds to <span className="font-bold text-gray-800">{recipient}</span>.
               </p>
             </div>
 
