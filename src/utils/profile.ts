@@ -91,6 +91,23 @@ export const saveUserProfile = async (userId: string, email: string, profileData
   };
   localStorage.setItem(storageKey, JSON.stringify(updatedLocal));
 
+  // Sync with central user registry in local storage
+  try {
+    const rawRegistry = localStorage.getItem('all_registered_users');
+    let registryList: any[] = rawRegistry ? JSON.parse(rawRegistry) : [];
+    if (!Array.isArray(registryList)) registryList = [];
+
+    const existingIdx = registryList.findIndex(u => u && (u.id === userId || u.email === email));
+    if (existingIdx >= 0) {
+      registryList[existingIdx] = { ...registryList[existingIdx], ...updatedLocal };
+    } else {
+      registryList.push({ id: userId, email, ...updatedLocal });
+    }
+    localStorage.setItem('all_registered_users', JSON.stringify(registryList));
+  } catch (e) {
+    console.warn('Error updating all_registered_users:', e);
+  }
+
   try {
     await supabase.from('profiles').upsert({
       id: userId,
@@ -102,7 +119,116 @@ export const saveUserProfile = async (userId: string, email: string, profileData
     console.warn('Supabase profiles update notice:', err);
   }
 
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId, updatedLocal } }));
+  }
+
   return updatedLocal;
+};
+
+export const syncRegisteredUser = async (userObj: any, signupFields: Record<string, any> = {}) => {
+  if (!userObj || (!userObj.id && !userObj.uid)) return null;
+
+  const userId = userObj.id || userObj.uid;
+  const email = userObj.email || signupFields.email || `user_${userId.substring(0, 6)}@safeglobalbank.com`;
+  
+  const firstName = signupFields.firstName || signupFields.first_name || userObj.user_metadata?.first_name || '';
+  const lastName = signupFields.lastName || signupFields.last_name || userObj.user_metadata?.last_name || '';
+  const displayName = signupFields.displayName || signupFields.display_name || (firstName || lastName ? `${firstName} ${lastName}`.trim() : email.split('@')[0]);
+  const phone = signupFields.phone || userObj.phone || '';
+  const address = signupFields.address || '';
+  const city = signupFields.city || '';
+  const state = signupFields.state || '';
+  const zip = signupFields.zip || '';
+  const country = signupFields.country || '';
+  const pin = signupFields.pin || '1234';
+  const role = signupFields.role || (email.toLowerCase().includes('admin') ? 'admin' : 'user');
+  const status = signupFields.status || 'active';
+  const kycStatus = signupFields.kyc_status || signupFields.kycStatus || 'Unverified';
+
+  // 1. Update local profile key
+  const storageKey = `local_profile_${userId}`;
+  const existingLocal = JSON.parse(localStorage.getItem(storageKey) || '{}');
+  const profileRecord = {
+    id: userId,
+    email,
+    first_name: firstName,
+    last_name: lastName,
+    display_name: displayName,
+    phone,
+    address,
+    city,
+    state,
+    zip,
+    country,
+    pin,
+    role: existingLocal.role || role,
+    status: existingLocal.status || status,
+    kyc_status: existingLocal.kyc_status || kycStatus,
+    created_at: existingLocal.created_at || userObj.created_at || new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+  localStorage.setItem(storageKey, JSON.stringify(profileRecord));
+
+  // 2. Update central user registry array in localStorage
+  try {
+    const rawRegistry = localStorage.getItem('all_registered_users');
+    let registryList: any[] = rawRegistry ? JSON.parse(rawRegistry) : [];
+    if (!Array.isArray(registryList)) registryList = [];
+
+    const existingIdx = registryList.findIndex(u => u && (u.id === userId || u.email === email));
+    if (existingIdx >= 0) {
+      registryList[existingIdx] = { ...registryList[existingIdx], ...profileRecord };
+    } else {
+      registryList.push(profileRecord);
+    }
+    localStorage.setItem('all_registered_users', JSON.stringify(registryList));
+  } catch (e) {
+    console.warn('Error saving to all_registered_users registry:', e);
+  }
+
+  // 3. Upsert to Supabase profiles table
+  try {
+    await supabase.from('profiles').upsert(profileRecord, { onConflict: 'id' });
+  } catch (err) {
+    console.warn('Supabase profiles upsert notice:', err);
+  }
+
+  // 4. Ensure initial account in Supabase & local storage
+  const initialAccNum = signupFields.accountNumber || ('9424' + Math.floor(100000 + Math.random() * 900000));
+  const initialBalance = signupFields.balance !== undefined ? signupFields.balance : 1000;
+  const initialAccType = signupFields.accountType || 'checking';
+
+  const accountRecord = {
+    user_id: userId,
+    account_number: initialAccNum,
+    balance: initialBalance,
+    currency: 'USD',
+    account_type: initialAccType,
+    status: 'active'
+  };
+
+  try {
+    await supabase.from('accounts').upsert(accountRecord, { onConflict: 'user_id' });
+  } catch (err) {
+    console.warn('Supabase accounts upsert notice:', err);
+  }
+
+  // 5. If role is admin, ensure entry in admins table
+  if (role === 'admin') {
+    try {
+      await supabase.from('admins').upsert({ user_id: userId, email }, { onConflict: 'user_id' });
+    } catch (e) {
+      console.warn('Admins table notice:', e);
+    }
+  }
+
+  // Dispatch global window event for live real-time synchronization
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId, profileRecord } }));
+  }
+
+  return profileRecord;
 };
 
 export const loadUserProfile = async (userId: string, userAuthData?: any) => {

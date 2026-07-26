@@ -125,13 +125,44 @@ export default function AdminDashboard({ user }: { user: any }) {
                 lastName: localP.last_name || localP.lastName || existing.lastName || '',
                 phone: localP.phone || existing.phone || '',
                 kyc_status: localP.kyc_status || existing.kyc_status || 'verified',
-                status: localP.status || existing.status || 'active'
+                status: localP.status || existing.status || 'active',
+                role: localP.role || existing.role || 'user'
               });
             }
           } catch (e) {
             console.warn('Error reading local profile key:', e);
           }
         }
+      }
+
+      // Populate from central user registry array in localStorage
+      try {
+        const rawReg = localStorage.getItem('all_registered_users');
+        if (rawReg) {
+          const regList = JSON.parse(rawReg);
+          if (Array.isArray(regList)) {
+            regList.forEach((regU: any) => {
+              if (regU && regU.id) {
+                const existing = userMap.get(regU.id);
+                userMap.set(regU.id, {
+                  ...existing,
+                  id: regU.id,
+                  email: regU.email || existing?.email || `user_${regU.id.substring(0, 6)}@safeglobalbank.com`,
+                  displayName: regU.display_name || regU.displayName || existing?.displayName || `${regU.first_name || ''} ${regU.last_name || ''}`.trim() || regU.email?.split('@')[0],
+                  firstName: regU.first_name || regU.firstName || existing?.firstName || '',
+                  lastName: regU.last_name || regU.lastName || existing?.lastName || '',
+                  phone: regU.phone || existing?.phone || '',
+                  kyc_status: regU.kyc_status || existing?.kyc_status || 'verified',
+                  status: regU.status || existing?.status || 'active',
+                  role: regU.role || existing?.role || 'user',
+                  created_at: regU.created_at || existing?.created_at || new Date().toISOString()
+                });
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('Error reading central all_registered_users registry:', e);
       }
 
       // Ensure the currently authenticated administrator/user is always present
@@ -182,8 +213,13 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 12000);
-    return () => clearInterval(interval);
+    const interval = setInterval(fetchData, 10000);
+    const handleUserSyncEvent = () => fetchData();
+    window.addEventListener('user_registered_or_updated', handleUserSyncEvent);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('user_registered_or_updated', handleUserSyncEvent);
+    };
   }, []);
 
   const logAuditAction = async (action: string, targetUser: string, details: string) => {

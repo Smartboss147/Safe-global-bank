@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Fingerprint, ChevronLeft, ChevronRight, CheckCircle2, User, Building, Landmark, Coins, Briefcase } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
+import { syncRegisteredUser } from '../utils/profile';
 
 export default function LoginForm({ user }: { user?: any }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -61,8 +62,11 @@ export default function LoginForm({ user }: { user?: any }) {
     setSuccessMsg('');
     setLoading(true);
     try {
-      const { error: authError } = await login(loginEmail, loginPassword);
+      const { data, error: authError } = await login(loginEmail, loginPassword);
       if (authError) throw authError;
+      if (data?.user) {
+        await syncRegisteredUser(data.user);
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to login');
     } finally {
@@ -109,36 +113,9 @@ export default function LoginForm({ user }: { user?: any }) {
       // Create initial account and profile record with complete signup information
       if (userCredential?.user) {
         try {
-          // Upsert complete profile details
-          await supabase.from('profiles').upsert({
-            id: userCredential.user.id,
-            email: signupData.email,
-            first_name: signupData.firstName,
-            last_name: signupData.lastName,
-            display_name: `${signupData.firstName} ${signupData.lastName}`,
-            phone: signupData.phone,
-            address: signupData.address,
-            city: signupData.city,
-            state: signupData.state,
-            zip: signupData.zip,
-            country: signupData.country,
-            pin: signupData.pin,
-            kyc_status: 'Unverified',
-            role: 'user',
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' });
-
-          // Create initial bank account
-          await supabase.from('accounts').insert({
-            user_id: userCredential.user.id,
-            account_number: '9424' + Math.floor(100000 + Math.random() * 900000),
-            balance: 1000, // Welcome deposit
-            currency: 'USD',
-            account_type: signupData.accountType,
-            status: 'active'
-          });
+          await syncRegisteredUser(userCredential.user, signupData);
         } catch (dbErr) {
-          console.error('Error creating user profile/account docs:', dbErr);
+          console.error('Error syncing user profile/account docs:', dbErr);
         }
       }
       navigate('/');

@@ -7,6 +7,7 @@ import LandingPage from './components/LandingPage';
 import AdminDashboard from './components/AdminDashboard';
 import AdminRoute from './components/AdminRoute';
 import AdminLogin from './components/AdminLogin';
+import { syncRegisteredUser } from './utils/profile';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -16,13 +17,21 @@ export default function App() {
   useEffect(() => {
     try {
       supabase.auth.getSession().then(({ data: { session } }) => {
-        setUser(session?.user ?? null);
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        if (currentUser) {
+          syncRegisteredUser(currentUser);
+        }
         setLoading(false);
       });
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         (_event, session) => {
-          setUser(session?.user ?? null);
+          const currentUser = session?.user ?? null;
+          setUser(currentUser);
+          if (currentUser) {
+            syncRegisteredUser(currentUser);
+          }
           setLoading(false);
         }
       );

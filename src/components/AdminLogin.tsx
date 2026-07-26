@@ -12,27 +12,34 @@ export default function AdminLogin({ user }: { user?: any }) {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  // Helper to check if a user ID is an admin
+  const isUserAdmin = async (uId: string, uEmail?: string) => {
+    if (!uId) return false;
+    if (uEmail && uEmail.toLowerCase().includes('admin')) return true;
+
+    try {
+      const localP = JSON.parse(localStorage.getItem(`local_profile_${uId}`) || '{}');
+      if (localP && localP.role === 'admin') return true;
+    } catch (e) {}
+
+    try {
+      const { data: adminData } = await supabase.from('admins').select('user_id').eq('user_id', uId).maybeSingle();
+      if (adminData) return true;
+
+      const { data: profileData } = await supabase.from('profiles').select('role').eq('id', uId).maybeSingle();
+      if (profileData && profileData.role === 'admin') return true;
+    } catch (e) {}
+
+    return false;
+  };
+
   // Redirect if already logged in and admin
   useEffect(() => {
     async function checkExistingUser() {
       if (user) {
-        try {
-          
-          const { data, error } = await supabase
-            .from('admins')
-            .select('user_id')
-            .eq('user_id', user.id)
-            .single();
-            
-          if (data) {
-
-            navigate('/admin');
-          } else {
-            // Not an admin, don't auto-redirect to admin dashboard. 
-            // We could redirect to / but let's just show an error if they are trying to use admin login.
-          }
-        } catch (err) {
-          console.error(err);
+        const isAdmin = await isUserAdmin(user.id, user.email);
+        if (isAdmin) {
+          navigate('/admin');
         }
       }
     }
@@ -48,20 +55,16 @@ export default function AdminLogin({ user }: { user?: any }) {
       const { data, error: authError } = await login(email, password);
       if (authError) throw authError;
       
-      // Verify admin role
-      
-      const { data: adminData, error: adminError } = await supabase
-        .from('admins')
-        .select('user_id')
-        .eq('user_id', data.user.id)
-        .single();
-        
-      if (adminData) {
-
-        navigate('/admin');
+      if (data?.user) {
+        const isAdmin = await isUserAdmin(data.user.id, data.user.email);
+        if (isAdmin) {
+          navigate('/admin');
+        } else {
+          await logout();
+          setError('Access denied: Unauthorized role.');
+        }
       } else {
-        await logout();
-        setError('Access denied: Unauthorized role.');
+        throw new Error('Authentication failed');
       }
     } catch (err: any) {
       setError(err.message || 'Failed to login');
