@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-
-
+import { getUserDisplayName, getUserPhotoURL, loadUserProfile } from '../utils/profile';
 import { motion, AnimatePresence } from 'motion/react';
 import TransactionForm from './TransactionForm';
 import TransactionHistory from './TransactionHistory';
@@ -83,6 +82,7 @@ export default function Dashboard({ user }: { user: any }) {
   }, [user]);
 
   const fetchAccount = async () => {
+    if (!user) return;
     
     // Fetch account
     const { data: accData } = await supabase.from('accounts').select('*').eq('user_id', user.id);
@@ -91,12 +91,9 @@ export default function Dashboard({ user }: { user: any }) {
       setAccount(accData[0]);
     }
     
-    // Fetch user profile info
-    const { data: userData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    if (userData) {
-      setUserData({ ...user, ...userData });
-    }
-
+    // Fetch user profile info with local override fallback
+    const profile = await loadUserProfile(user.id, user);
+    setUserData(profile);
   };
 
   useEffect(() => {
@@ -164,7 +161,7 @@ export default function Dashboard({ user }: { user: any }) {
           
           <div className="relative">
             <button className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden border-2 border-white shadow-sm hover:ring-2 hover:ring-blue-500 transition-all" onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}>
-              <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
+              <img src={getUserPhotoURL(userData, user)} alt="Profile" className="w-full h-full object-cover" />
             </button>
             
             <AnimatePresence>
@@ -178,7 +175,7 @@ export default function Dashboard({ user }: { user: any }) {
                     className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl z-50 border border-gray-100 py-2"
                   >
                     <div className="px-4 py-3 border-b border-gray-100">
-                      <p className="text-sm font-bold text-gray-900 truncate">{userData?.displayName || userData?.firstName || 'User'}</p>
+                      <p className="text-sm font-bold text-gray-900 truncate">{getUserDisplayName(userData, user)}</p>
                       <p className="text-xs text-gray-500 truncate">{user?.email}</p>
                     </div>
                     <div className="py-1">
@@ -254,11 +251,11 @@ export default function Dashboard({ user }: { user: any }) {
               <div className="flex justify-between items-start mb-6 px-2">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
-                    <img src={userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.firstName || 'User'}`} alt="Profile" className="w-full h-full object-cover" />
+                    <img src={getUserPhotoURL(userData, user)} alt="Profile" className="w-full h-full object-cover" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{userData ? `${userData.firstName} ${userData.lastName}` : 'User'}</h3>
-                    <p className="text-sm text-gray-500">Account: {account ? account.accountNumber : 'Loading...'}</p>
+                    <h3 className="font-bold text-gray-900">{getUserDisplayName(userData, user)}</h3>
+                    <p className="text-sm text-gray-500">Account: {account ? (account.account_number || account.accountNumber) : 'Loading...'}</p>
                   </div>
                 </div>
                 <button 
@@ -335,8 +332,8 @@ export default function Dashboard({ user }: { user: any }) {
 
 function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
   const accNum = account?.account_number || account?.accountNumber || '';
-  const fullName = userData?.display_name || (userData?.first_name ? `${userData.first_name} ${userData.last_name}` : (userData?.firstName ? `${userData.firstName} ${userData.lastName}` : 'Valued Customer'));
-  const avatarSrc = userData?.avatar_url || userData?.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${fullName}`;
+  const fullName = getUserDisplayName(userData, user);
+  const avatarSrc = getUserPhotoURL(userData, user);
   const accountStatus = account?.status || 'active';
 
   return (
