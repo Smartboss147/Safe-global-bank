@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 const getStore = (key: string) => {
   try {
@@ -17,29 +17,41 @@ const setStore = (key: string, data: any) => {
 
 export let cachedUser: any = null;
 
-supabase.auth.getUser().then(({ data }) => {
-  if (data?.user) {
-    cachedUser = {
-      uid: data.user.id,
-      email: data.user.email,
-      displayName: data.user.user_metadata?.display_name || '',
-      photoURL: data.user.user_metadata?.avatar_url || ''
-    };
+try {
+  const localU = localStorage.getItem('sb_auth_user');
+  if (localU) {
+    cachedUser = JSON.parse(localU);
   }
-});
+} catch {}
 
-supabase.auth.onAuthStateChange((_event, session) => {
-  if (session?.user) {
-    cachedUser = {
-      uid: session.user.id,
-      email: session.user.email,
-      displayName: session.user.user_metadata?.display_name || '',
-      photoURL: session.user.user_metadata?.avatar_url || ''
-    };
-  } else {
-    cachedUser = null;
-  }
-});
+if (isSupabaseConfigured) {
+  supabase.auth.getUser().then(({ data }) => {
+    if (data?.user) {
+      cachedUser = {
+        uid: data.user.id,
+        email: data.user.email,
+        displayName: data.user.user_metadata?.display_name || '',
+        photoURL: data.user.user_metadata?.avatar_url || ''
+      };
+      try { localStorage.setItem('sb_auth_user', JSON.stringify(cachedUser)); } catch {}
+    }
+  });
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    if (session?.user) {
+      cachedUser = {
+        uid: session.user.id,
+        email: session.user.email,
+        displayName: session.user.user_metadata?.display_name || '',
+        photoURL: session.user.user_metadata?.avatar_url || ''
+      };
+      try { localStorage.setItem('sb_auth_user', JSON.stringify(cachedUser)); } catch {}
+    } else {
+      cachedUser = null;
+      try { localStorage.removeItem('sb_auth_user'); } catch {}
+    }
+  });
+}
 
 export const auth: any = {
   get currentUser() {
@@ -48,6 +60,11 @@ export const auth: any = {
 };
 
 export const onAuthStateChanged = (_authObj: any, callback: (user: any) => void, errorCallback?: (err: any) => void) => {
+  if (!isSupabaseConfigured) {
+    callback(cachedUser);
+    return () => {};
+  }
+
   supabase.auth.getUser().then(({ data }) => {
     if (data?.user) {
       const u = {
@@ -89,6 +106,32 @@ export const onAuthStateChanged = (_authObj: any, callback: (user: any) => void,
 };
 
 export const signInWithEmailAndPassword = async (_auth: any, email: string, password: string) => {
+  if (!isSupabaseConfigured) {
+    const uid = email.toLowerCase().includes('admin') ? 'admin_id_1' : ('user_' + Math.random().toString(36).substring(2, 9));
+    const u = {
+      uid,
+      email,
+      displayName: email.split('@')[0],
+    };
+    cachedUser = u;
+    try { localStorage.setItem('sb_auth_user', JSON.stringify(u)); } catch {}
+
+    // Ensure user doc exists
+    try {
+      await setDoc(doc({} as any, 'users', uid), {
+        uid,
+        email,
+        displayName: email.split('@')[0],
+        role: email.toLowerCase().includes('admin') ? 'admin' : 'user',
+        balance: 15420.50,
+        createdAt: new Date().toISOString(),
+        kycStatus: 'verified'
+      });
+    } catch {}
+
+    return { user: u };
+  }
+
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   const u = {
@@ -97,10 +140,46 @@ export const signInWithEmailAndPassword = async (_auth: any, email: string, pass
     displayName: data.user.user_metadata?.display_name || '',
   };
   cachedUser = u;
+  try { localStorage.setItem('sb_auth_user', JSON.stringify(u)); } catch {}
   return { user: u };
 };
 
 export const createUserWithEmailAndPassword = async (_auth: any, email: string, password: string) => {
+  if (!isSupabaseConfigured) {
+    const uid = email.toLowerCase().includes('admin') ? 'admin_id_1' : ('user_' + Math.random().toString(36).substring(2, 9));
+    const u = {
+      uid,
+      email,
+      displayName: email.split('@')[0],
+    };
+    cachedUser = u;
+    try { localStorage.setItem('sb_auth_user', JSON.stringify(u)); } catch {}
+
+    try {
+      await setDoc(doc({} as any, 'users', uid), {
+        uid,
+        email,
+        displayName: email.split('@')[0],
+        role: email.toLowerCase().includes('admin') ? 'admin' : 'user',
+        balance: 10000.00,
+        createdAt: new Date().toISOString(),
+        kycStatus: 'verified'
+      });
+
+      await addDoc(collection({} as any, 'accounts'), {
+        userId: uid,
+        accountNumber: 'SGB' + Math.floor(1000000000 + Math.random() * 9000000000),
+        accountType: 'Checking',
+        balance: 15420.50,
+        currency: 'USD',
+        status: 'Active',
+        createdAt: new Date().toISOString()
+      });
+    } catch (e) {}
+
+    return { user: u };
+  }
+
   const { data, error } = await supabase.auth.signUp({ 
     email, 
     password,
@@ -116,6 +195,7 @@ export const createUserWithEmailAndPassword = async (_auth: any, email: string, 
     displayName: data.user.user_metadata?.display_name || '',
   };
   cachedUser = u;
+  try { localStorage.setItem('sb_auth_user', JSON.stringify(u)); } catch {}
 
   try {
     const userId = data.user.id;
@@ -123,7 +203,7 @@ export const createUserWithEmailAndPassword = async (_auth: any, email: string, 
       uid: userId,
       email,
       displayName: email.split('@')[0],
-      role: email.includes('admin') ? 'admin' : 'user',
+      role: email.toLowerCase().includes('admin') ? 'admin' : 'user',
       balance: 10000.00,
       createdAt: new Date().toISOString(),
       kycStatus: 'verified'
@@ -146,11 +226,15 @@ export const createUserWithEmailAndPassword = async (_auth: any, email: string, 
 };
 
 export const signOut = async (_auth: any) => {
-  await supabase.auth.signOut();
+  if (isSupabaseConfigured) {
+    try { await supabase.auth.signOut(); } catch {}
+  }
   cachedUser = null;
+  try { localStorage.removeItem('sb_auth_user'); } catch {}
 };
 
 export const sendPasswordResetEmail = async (_auth: any, email: string) => {
+  if (!isSupabaseConfigured) return;
   const { error } = await supabase.auth.resetPasswordForEmail(email);
   if (error) throw error;
 };
@@ -182,23 +266,25 @@ export const getDoc = async (docRef: any): Promise<any> => {
   const store = getStore(docRef.collectionName);
   const data = store[docRef.id];
   
-  try {
-    const { data: sbData, error } = await supabase
-      .from(docRef.collectionName)
-      .select('*')
-      .eq('id', docRef.id)
-      .single();
-    
-    if (!error && sbData) {
-      store[docRef.id] = sbData;
-      setStore(docRef.collectionName, store);
-      return {
-        exists: () => true,
-        id: docRef.id,
-        data: () => sbData
-      };
-    }
-  } catch (e) {}
+  if (isSupabaseConfigured) {
+    try {
+      const { data: sbData, error } = await supabase
+        .from(docRef.collectionName)
+        .select('*')
+        .eq('id', docRef.id)
+        .single();
+      
+      if (!error && sbData) {
+        store[docRef.id] = sbData;
+        setStore(docRef.collectionName, store);
+        return {
+          exists: () => true,
+          id: docRef.id,
+          data: () => sbData
+        };
+      }
+    } catch (e) {}
+  }
 
   if (data) {
     return {
@@ -211,9 +297,9 @@ export const getDoc = async (docRef: any): Promise<any> => {
   if (docRef.collectionName === 'users') {
     const defaultUser = {
       uid: docRef.id,
-      email: 'user@safe.com',
-      displayName: 'Global User',
-      role: docRef.id === 'admin' || docRef.id.includes('admin') ? 'admin' : 'user',
+      email: docRef.id === 'admin_id_1' ? 'admin@safeglobal.com' : 'user@safe.com',
+      displayName: docRef.id === 'admin_id_1' ? 'System Admin' : 'Global User',
+      role: docRef.id === 'admin' || docRef.id === 'admin_id_1' || docRef.id.includes('admin') ? 'admin' : 'user',
       balance: 15420.50,
       createdAt: new Date().toISOString(),
       kycStatus: 'verified'
@@ -239,9 +325,11 @@ export const setDoc = async (docRef: any, data: any, options?: { merge?: boolean
   store[docRef.id] = merged;
   setStore(docRef.collectionName, store);
 
-  try {
-    await supabase.from(docRef.collectionName).upsert({ id: docRef.id, ...merged });
-  } catch (e) {}
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from(docRef.collectionName).upsert({ id: docRef.id, ...merged });
+    } catch (e) {}
+  }
 };
 
 export const addDoc = async (colRef: any, data: any): Promise<any> => {
@@ -251,9 +339,11 @@ export const addDoc = async (colRef: any, data: any): Promise<any> => {
   store[id] = record;
   setStore(colRef.name, store);
 
-  try {
-    await supabase.from(colRef.name).insert([record]);
-  } catch (e) {}
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from(colRef.name).insert([record]);
+    } catch (e) {}
+  }
 
   return new DocumentReference(colRef.name, id);
 };
@@ -265,9 +355,11 @@ export const updateDoc = async (docRef: any, data: any): Promise<void> => {
   store[docRef.id] = updated;
   setStore(docRef.collectionName, store);
 
-  try {
-    await supabase.from(docRef.collectionName).update(data).eq('id', docRef.id);
-  } catch (e) {}
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from(docRef.collectionName).update(data).eq('id', docRef.id);
+    } catch (e) {}
+  }
 };
 
 export const deleteDoc = async (docRef: any): Promise<void> => {
@@ -275,9 +367,11 @@ export const deleteDoc = async (docRef: any): Promise<void> => {
   delete store[docRef.id];
   setStore(docRef.collectionName, store);
 
-  try {
-    await supabase.from(docRef.collectionName).delete().eq('id', docRef.id);
-  } catch (e) {}
+  if (isSupabaseConfigured) {
+    try {
+      await supabase.from(docRef.collectionName).delete().eq('id', docRef.id);
+    } catch (e) {}
+  }
 };
 
 export const query = (colRef: any, ...conditions: any[]): any => {
@@ -296,16 +390,18 @@ export const getDocs = async (q: any): Promise<any> => {
   let recordsObj = getStore(q.collectionName);
   let records = Object.values(recordsObj);
 
-  try {
-    const { data: sbRecords } = await supabase.from(q.collectionName).select('*');
-    if (sbRecords && sbRecords.length > 0) {
-      sbRecords.forEach((r: any) => {
-        recordsObj[r.id || r.uid] = r;
-      });
-      setStore(q.collectionName, recordsObj);
-      records = Object.values(recordsObj);
-    }
-  } catch (e) {}
+  if (isSupabaseConfigured) {
+    try {
+      const { data: sbRecords } = await supabase.from(q.collectionName).select('*');
+      if (sbRecords && sbRecords.length > 0) {
+        sbRecords.forEach((r: any) => {
+          recordsObj[r.id || r.uid] = r;
+        });
+        setStore(q.collectionName, recordsObj);
+        records = Object.values(recordsObj);
+      }
+    } catch (e) {}
+  }
 
   if (records.length === 0 && q.collectionName === 'accounts') {
     const defaultAcc = {
@@ -365,4 +461,3 @@ export const runTransaction = async (_db: any, updateFunction: any) => {
     set: async (ref: any, data: any, opts: any) => await setDoc(ref, data, opts)
   });
 };
-
