@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { formatCurrencyAmount, getCurrencyInfo } from '../../utils/currency';
 import { ArrowDownLeft, ArrowUpRight, Copy, QrCode, ChevronDown, CheckCircle, XCircle, Check, Wallet } from 'lucide-react';
 
 const SUPPORTED_COINS = [
@@ -186,13 +187,15 @@ export default function CryptoWallet({ user }: any) {
   const cryptoValue = activeAssets.reduce((sum, a) => sum + a.value, 0);
   const tradingBalance = wallet?.trading_balance || 0;
   const totalValue = cryptoValue + tradingBalance;
+  
+  const currInfo = getCurrencyInfo(user?.currency_code || user?.currency || user?.country || 'USD');
 
   return (
     <div className="space-y-6">
       <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white p-6 sm:p-8 rounded-3xl shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4" />
         <p className="text-slate-400 text-xs sm:text-sm font-semibold uppercase tracking-wider relative z-10">Total Crypto Account Value</p>
-        <p className="text-3xl sm:text-4xl mt-2 font-black tracking-tight relative z-10">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        <p className="text-3xl sm:text-4xl mt-2 font-black tracking-tight relative z-10">{formatCurrencyAmount(totalValue, currInfo)}</p>
         
         <div className="flex gap-2 sm:gap-4 mt-6 relative z-10">
           <button 
@@ -228,7 +231,7 @@ export default function CryptoWallet({ user }: any) {
           <div className="flex justify-between items-center bg-gray-50/80 p-4 rounded-2xl border border-gray-100">
             <div>
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trading Account Balance</p>
-              <p className="text-lg font-bold text-gray-900 mt-0.5">${tradingBalance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              <p className="text-lg font-bold text-gray-900 mt-0.5">{formatCurrencyAmount(tradingBalance, currInfo)}</p>
             </div>
             <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Active</span>
           </div>
@@ -250,7 +253,7 @@ export default function CryptoWallet({ user }: any) {
                   
                   <div className="flex items-center gap-4">
                     <div className="text-right">
-                      <p className="font-bold text-gray-900 text-sm">${asset.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      <p className="font-bold text-gray-900 text-sm">{formatCurrencyAmount(asset.value, currInfo)}</p>
                       <p className={`text-xs font-bold mt-0.5 ${parseFloat(asset.change) >= 0 ? 'text-emerald-600' : 'text-rose-500'}`}>
                         {parseFloat(asset.change) >= 0 ? '+' : ''}{asset.change}%
                       </p>

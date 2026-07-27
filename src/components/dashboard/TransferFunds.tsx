@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { formatCurrencyAmount, getCurrencySymbol, getCurrencyInfo } from '../../utils/currency';
 import { 
   Send, 
   Building2, 
@@ -43,6 +44,8 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   const availableBalance = Number(account?.balance || 0);
+  const userCurr = account?.currency_code || account?.currency || user?.currency_code || user?.currency || user?.country || 'USD';
+  const currInfo = getCurrencyInfo(userCurr);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,13 +62,13 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) {
       setStatus('error');
-      setMessage('Please enter a valid transfer amount greater than $0.00.');
+      setMessage(`Please enter a valid transfer amount greater than ${formatCurrencyAmount(0, currInfo)}.`);
       return;
     }
 
     if (val > availableBalance) {
       setStatus('error');
-      setMessage(`Insufficient funds. Your available balance is $${availableBalance.toFixed(2)}.`);
+      setMessage(`Insufficient funds. Your available balance is ${formatCurrencyAmount(availableBalance, currInfo)}.`);
       return;
     }
 
@@ -268,7 +271,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
           ['Recipient', receiptData.recipient],
           ['Bank / Network', receiptData.bankName],
           ['Transfer Type', receiptData.type.toUpperCase()],
-          ['Amount Transferred', `$${receiptData.amount.toFixed(2)} USD`],
+          ['Amount Transferred', formatCurrencyAmount(receiptData.amount, currInfo, { includeCode: true })],
           ['Status', receiptData.status.toUpperCase()]
         ],
         headStyles: { fillColor: [10, 61, 54] },
@@ -386,11 +389,12 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
 
         {/* Amount Input with Quick Preset Chips */}
         <div>
-          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-            Transfer Amount ($ USD)
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+            <span>Transfer Amount ({currInfo.code})</span>
+            <span className="text-[#0A3D36] font-extrabold">{currInfo.symbol}</span>
           </label>
           <div className="relative mb-2">
-            <DollarSign className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-extrabold text-base">{currInfo.symbol}</span>
             <input
               type="number"
               step="0.01"
@@ -409,7 +413,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
                 onClick={() => setAmount(val.toString())}
                 className="px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-bold transition"
               >
-                +${val}
+                +{currInfo.symbol}{val}
               </button>
             ))}
           </div>
@@ -517,12 +521,12 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
                 </div>
                 <div className="flex justify-between border-t border-gray-200 pt-2 text-base">
                   <span className="font-bold text-gray-900">Total Deduction</span>
-                  <span className="font-black text-[#0A3D36]">${parseFloat(amount || '0').toFixed(2)}</span>
+                  <span className="font-black text-[#0A3D36]">{formatCurrencyAmount(amount || 0, currInfo)}</span>
                 </div>
               </div>
 
               <p className="text-xs text-gray-500 leading-relaxed">
-                By confirming, you authorize Safe Global Bank to deduct <span className="font-bold text-gray-800">${parseFloat(amount || '0').toFixed(2)}</span> from your account and process the funds to <span className="font-bold text-gray-800">{recipient}</span>.
+                By confirming, you authorize Safe Global Trade to deduct <span className="font-bold text-gray-800">{formatCurrencyAmount(amount || 0, currInfo)}</span> from your account and process the funds to <span className="font-bold text-gray-800">{recipient}</span>.
               </p>
             </div>
 

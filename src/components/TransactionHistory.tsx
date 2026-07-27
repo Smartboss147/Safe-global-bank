@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
+import { formatCurrencyAmount, getCurrencySymbol, getCurrencyInfo } from '../utils/currency';
 import { 
   ArrowDownLeft, 
   ArrowUpRight, 
@@ -155,12 +156,13 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         doc.setFontSize(12);
         doc.text("No transactions recorded for this billing period.", 14, 48);
       } else {
+        const userCurr = user?.currency_code || user?.currency || user?.country || 'USD';
         const tableData = statementTransactions.map(t => [
           new Date(t.created_at).toLocaleDateString() + ' ' + new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           t.description || 'General Transaction',
           (t.type || '').toUpperCase(),
           (t.status || 'completed').toUpperCase(),
-          `${t.type === 'deposit' || t.type === 'transfer_in' || t.type === 'credit' ? '+' : '-'}$${Number(t.amount).toFixed(2)}`
+          `${t.type === 'deposit' || t.type === 'transfer_in' || t.type === 'credit' ? '+' : '-'}${formatCurrencyAmount(t.amount, userCurr)}`
         ]);
 
         autoTable(doc, {
@@ -238,7 +240,9 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         <div className="bg-emerald-50/70 border border-emerald-100/80 p-4 rounded-2xl flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Total Deposits</p>
-            <p className="text-xl font-black text-emerald-900 mt-1">${totalDeposits.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <p className="text-xl font-black text-emerald-900 mt-1">
+              {formatCurrencyAmount(totalDeposits, user?.currency_code || user?.currency || user?.country)}
+            </p>
           </div>
           <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
             <TrendingUp size={20} />
@@ -248,7 +252,9 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         <div className="bg-rose-50/70 border border-rose-100/80 p-4 rounded-2xl flex items-center justify-between">
           <div>
             <p className="text-xs font-bold text-rose-800 uppercase tracking-wider">Total Withdrawals</p>
-            <p className="text-xl font-black text-rose-900 mt-1">${totalWithdrawals.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+            <p className="text-xl font-black text-rose-900 mt-1">
+              {formatCurrencyAmount(totalWithdrawals, user?.currency_code || user?.currency || user?.country)}
+            </p>
           </div>
           <div className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shadow-md shadow-rose-500/20">
             <TrendingDown size={20} />
@@ -401,7 +407,7 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
 
                 <div className="text-right shrink-0 ml-4">
                   <span className={`font-bold text-base sm:text-lg tracking-tight ${isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
-                    {isCredit ? '+' : '-'}${formattedAmount}
+                    {isCredit ? '+' : '-'}{formatCurrencyAmount(t.amount, user?.currency_code || user?.currency || user?.country)}
                   </span>
                   <div className="mt-0.5">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${

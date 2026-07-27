@@ -8,6 +8,7 @@ import AdminDashboard from './components/AdminDashboard';
 import AdminRoute from './components/AdminRoute';
 import AdminLogin from './components/AdminLogin';
 import { syncRegisteredUser } from './utils/profile';
+import { initializeCurrencies } from './utils/currency';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -16,6 +17,7 @@ export default function App() {
 
   useEffect(() => {
     try {
+      initializeCurrencies(supabase);
       supabase.auth.getSession().then(({ data: { session } }) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);

@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { getCurrencyByCountry, getCurrencyInfo } from './currency';
 
 export const getUserDisplayName = (userData: any, user: any): string => {
   if (!userData && !user) return 'Valued Customer';
@@ -132,23 +133,29 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   const userId = userObj.id || userObj.uid;
   const email = userObj.email || signupFields.email || `user_${userId.substring(0, 6)}@safeglobalbank.com`;
   
-  const firstName = signupFields.firstName || signupFields.first_name || userObj.user_metadata?.first_name || '';
-  const lastName = signupFields.lastName || signupFields.last_name || userObj.user_metadata?.last_name || '';
-  const displayName = signupFields.displayName || signupFields.display_name || (firstName || lastName ? `${firstName} ${lastName}`.trim() : email.split('@')[0]);
-  const phone = signupFields.phone || userObj.phone || '';
-  const address = signupFields.address || '';
-  const city = signupFields.city || '';
-  const state = signupFields.state || '';
-  const zip = signupFields.zip || '';
-  const country = signupFields.country || '';
-  const pin = signupFields.pin || '1234';
-  const role = signupFields.role || (email.toLowerCase().includes('admin') ? 'admin' : 'user');
-  const status = signupFields.status || 'active';
-  const kycStatus = signupFields.kyc_status || signupFields.kycStatus || 'Unverified';
-
-  // 1. Update local profile key
   const storageKey = `local_profile_${userId}`;
   const existingLocal = JSON.parse(localStorage.getItem(storageKey) || '{}');
+
+  const firstName = signupFields.firstName || signupFields.first_name || userObj.user_metadata?.first_name || existingLocal.first_name || '';
+  const lastName = signupFields.lastName || signupFields.last_name || userObj.user_metadata?.last_name || existingLocal.last_name || '';
+  const displayName = signupFields.displayName || signupFields.display_name || (firstName || lastName ? `${firstName} ${lastName}`.trim() : email.split('@')[0]);
+  const phone = signupFields.phone || userObj.phone || existingLocal.phone || '';
+  const address = signupFields.address || existingLocal.address || '';
+  const city = signupFields.city || existingLocal.city || '';
+  const state = signupFields.state || existingLocal.state || '';
+  const zip = signupFields.zip || existingLocal.zip || '';
+  const country = signupFields.country || existingLocal.country || '';
+  const pin = signupFields.pin || existingLocal.pin || '1234';
+  const role = signupFields.role || existingLocal.role || (email.toLowerCase().includes('admin') ? 'admin' : 'user');
+  const status = signupFields.status || existingLocal.status || 'active';
+  const kycStatus = signupFields.kyc_status || signupFields.kycStatus || existingLocal.kyc_status || 'Unverified';
+
+  // Automatically derive currency based on country
+  const detectedCurrencyObj = getCurrencyByCountry(country);
+  const assignedCurrencyCode = signupFields.currency || signupFields.currency_code || (signupFields.country ? detectedCurrencyObj.code : (existingLocal.currency_code || existingLocal.currency || detectedCurrencyObj.code));
+  const assignedCurrencySymbol = signupFields.currency_symbol || (signupFields.country ? detectedCurrencyObj.symbol : (existingLocal.currency_symbol || detectedCurrencyObj.symbol));
+
+  // 1. Update local profile key
   const profileRecord = {
     id: userId,
     email,
@@ -161,10 +168,13 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     state,
     zip,
     country,
+    currency: assignedCurrencyCode,
+    currency_code: assignedCurrencyCode,
+    currency_symbol: assignedCurrencySymbol,
     pin,
-    role: existingLocal.role || role,
-    status: existingLocal.status || status,
-    kyc_status: existingLocal.kyc_status || kycStatus,
+    role,
+    status,
+    kyc_status: kycStatus,
     created_at: existingLocal.created_at || userObj.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -196,14 +206,16 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
 
   // 4. Ensure initial account in Supabase & local storage
   const initialAccNum = signupFields.accountNumber || ('9424' + Math.floor(100000 + Math.random() * 900000));
-  const initialBalance = signupFields.balance !== undefined ? signupFields.balance : 1000;
+  const initialBalance = signupFields.balance !== undefined ? signupFields.balance : 0;
   const initialAccType = signupFields.accountType || 'checking';
 
   const accountRecord = {
     user_id: userId,
     account_number: initialAccNum,
     balance: initialBalance,
-    currency: 'USD',
+    currency: assignedCurrencyCode,
+    currency_code: assignedCurrencyCode,
+    currency_symbol: assignedCurrencySymbol,
     account_type: initialAccType,
     status: 'active'
   };
@@ -245,9 +257,25 @@ export const loadUserProfile = async (userId: string, userAuthData?: any) => {
 
   const localProfile = userId ? JSON.parse(localStorage.getItem(`local_profile_${userId}`) || '{}') : {};
 
-  return {
+  const combined = {
     ...(userAuthData || {}),
     ...(profileFromDb || {}),
     ...(localProfile || {})
   };
+
+  if (combined && (combined.country || combined.id)) {
+    if (!combined.currency || !combined.currency_symbol || !combined.currency_code) {
+      const currencyObj = getCurrencyByCountry(combined.country);
+      combined.currency = combined.currency || currencyObj.code;
+      combined.currency_code = combined.currency_code || currencyObj.code;
+      combined.currency_symbol = combined.currency_symbol || currencyObj.symbol;
+
+      if (userId) {
+        const storageKey = `local_profile_${userId}`;
+        localStorage.setItem(storageKey, JSON.stringify({ ...localProfile, ...combined }));
+      }
+    }
+  }
+
+  return combined;
 };

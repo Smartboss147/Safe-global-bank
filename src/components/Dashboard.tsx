@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { getUserDisplayName, getUserPhotoURL, loadUserProfile } from '../utils/profile';
+import { formatCurrencyAmount, getCurrencyInfo } from '../utils/currency';
 import { motion, AnimatePresence } from 'motion/react';
 import TransactionForm from './TransactionForm';
 import TransactionHistory from './TransactionHistory';
@@ -255,7 +256,7 @@ export default function Dashboard({ user }: { user: any }) {
                   </div>
                   <div>
                     <h3 className="font-bold text-gray-900">{getUserDisplayName(userData, user)}</h3>
-                    <p className="text-sm text-gray-500">Account: {account ? (account.account_number || account.accountNumber) : 'Loading...'}</p>
+                    <p className="text-sm text-gray-500">Account: {account ? (account.account_number || account.accountNumber) : '••••••••'}</p>
                   </div>
                 </div>
                 <button 
@@ -368,7 +369,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
             </button>
           </div>
           <h1 className="text-[2.5rem] font-bold tracking-tight">
-            {account ? (showBalance ? `$${(account.balance || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} USD` : '••••••••') : 'Loading...'}
+            {showBalance ? formatCurrencyAmount(account?.balance, account?.currency_code || account?.currency || userData?.currency_code || userData?.currency || userData?.country, { includeCode: true }) : '••••••••'}
           </h1>
         </div>
 

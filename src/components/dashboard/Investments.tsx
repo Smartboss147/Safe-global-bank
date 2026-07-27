@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
+import { formatCurrencyAmount, getCurrencyInfo } from '../../utils/currency';
 import { TrendingUp, TrendingDown, Clock, Activity, BarChart2 } from 'lucide-react';
 
 const MARKETS = [
@@ -145,6 +146,8 @@ export default function Investments({ user }: any) {
 
   // Calculate live equity from open trades
   const totalProfit = openTrades.reduce((sum, t) => sum + (t.profit || 0), 0);
+  const userCurr = user?.currency_code || user?.currency || user?.country || 'USD';
+  const currInfo = getCurrencyInfo(userCurr);
   const currentEquity = tradingAccount.balance + totalProfit;
 
   return (
@@ -153,21 +156,21 @@ export default function Investments({ user }: any) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-lg">
           <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">Balance</p>
-          <p className="text-xl mt-1 font-bold">${tradingAccount.balance.toFixed(2)}</p>
+          <p className="text-xl mt-1 font-bold">{formatCurrencyAmount(tradingAccount.balance, currInfo)}</p>
         </div>
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Equity</p>
           <p className={`text-xl mt-1 font-bold ${currentEquity >= tradingAccount.balance ? 'text-green-600' : 'text-red-600'}`}>
-            ${currentEquity.toFixed(2)}
+            {formatCurrencyAmount(currentEquity, currInfo)}
           </p>
         </div>
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Margin</p>
-          <p className="text-xl mt-1 font-bold">${tradingAccount.margin.toFixed(2)}</p>
+          <p className="text-xl mt-1 font-bold">{formatCurrencyAmount(tradingAccount.margin, currInfo)}</p>
         </div>
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
           <p className="text-gray-500 text-xs font-bold uppercase tracking-wider">Free Margin</p>
-          <p className="text-xl mt-1 font-bold">${tradingAccount.freeMargin.toFixed(2)}</p>
+          <p className="text-xl mt-1 font-bold">{formatCurrencyAmount(tradingAccount.freeMargin, currInfo)}</p>
         </div>
       </div>
 
@@ -300,7 +303,7 @@ export default function Investments({ user }: any) {
                           <td className="p-3">{trade.size}</td>
                           <td className="p-3 font-mono">{trade.openPrice}</td>
                           <td className={`p-3 font-mono font-bold text-right ${trade.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            ${trade.profit.toFixed(2)}
+                            {formatCurrencyAmount(trade.profit, currInfo)}
                           </td>
                           <td className="p-3 text-right">
                             <button onClick={() => requestCloseTrade(trade.id)} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold hover:bg-red-200">Close</button>
@@ -334,7 +337,7 @@ export default function Investments({ user }: any) {
                           <td className="p-3 font-mono">{trade.openPrice}</td>
                           <td className="p-3 font-mono">{trade.closePrice}</td>
                           <td className={`p-3 font-mono font-bold text-right ${trade.profit >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                            ${trade.profit?.toFixed(2)}
+                            {formatCurrencyAmount(trade.profit || 0, currInfo)}
                           </td>
                         </tr>
                       ))}

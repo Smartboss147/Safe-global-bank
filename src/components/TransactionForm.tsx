@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getCurrencySymbol } from '../utils/currency';
 
 import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
 
@@ -8,6 +9,8 @@ export default function TransactionForm({ user, accountId, type, onSuccess, curr
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const symbol = getCurrencySymbol(user?.currency_code || user?.currency || user?.country);
 
   const handleSubmit = async (e: any) => {
     e.preventDefault();
@@ -60,7 +63,7 @@ export default function TransactionForm({ user, accountId, type, onSuccess, curr
       {error && <p className="text-red-500 text-xs font-bold">{error}</p>}
       
       <div className="relative">
-        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</span>
+        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">{symbol}</span>
         <input 
           type="number" 
           placeholder="0.00" 

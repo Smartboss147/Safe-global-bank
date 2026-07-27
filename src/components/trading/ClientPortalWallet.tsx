@@ -3,6 +3,7 @@ import { Wallet, ArrowRightLeft, PlusCircle, ArrowUpRight, ArrowDownLeft, FileTe
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../../lib/supabase';
+import { formatCurrencyAmount, getCurrencyInfo, getCurrencySymbol } from '../../utils/currency';
 
 interface ClientPortalWalletProps {
   user: any;
@@ -12,12 +13,15 @@ interface ClientPortalWalletProps {
 }
 
 export default function ClientPortalWallet({ user, account, fetchAccount, isDarkMode = false }: ClientPortalWalletProps) {
+  const userCurr = account?.currency_code || account?.currency || user?.currency_code || user?.currency || user?.country || 'USD';
+  const currInfo = getCurrencyInfo(userCurr);
+
   const [transferAmount, setTransferAmount] = useState('');
   const [transferDirection, setTransferDirection] = useState<'to_trading' | 'to_bank'>('to_trading');
   const [isProcessing, setIsProcessing] = useState(false);
   const [tradingAccounts, setTradingAccounts] = useState<any[]>([
-    { id: 'acc_live_101', number: 'SGT-994821-LIVE', type: 'Standard Live', currency: 'USD', leverage: '1:100', balance: account?.balance || 1000, equity: account?.balance || 1000, isLive: true },
-    { id: 'acc_demo_102', number: 'SGT-102938-DEMO', type: 'Demo Account', currency: 'USD', leverage: '1:500', balance: 100000, equity: 100000, isLive: false }
+    { id: 'acc_live_101', number: 'SGT-994821-LIVE', type: 'Standard Live', currency: currInfo.code, leverage: '1:100', balance: account?.balance !== undefined ? Number(account.balance) : 0, equity: account?.balance !== undefined ? Number(account.balance) : 0, isLive: true },
+    { id: 'acc_demo_102', number: 'SGT-102938-DEMO', type: 'Demo Account', currency: currInfo.code, leverage: '1:500', balance: 100000, equity: 100000, isLive: false }
   ]);
   const [selectedAccId, setSelectedAccId] = useState('acc_live_101');
   const [showNewAccModal, setShowNewAccModal] = useState(false);
@@ -53,7 +57,7 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
           prev.map(a => a.id === selectedAccId ? { ...a, balance: a.balance + val, equity: a.equity + val } : a)
         );
 
-        alert(`Successfully transferred $${val.toFixed(2)} to Trading Account ${activeTradingAccount.number}`);
+        alert(`Successfully transferred ${formatCurrencyAmount(val, currInfo)} to Trading Account ${activeTradingAccount.number}`);
       } else {
         // Transfer from Trading Account to Bank Account
         if (activeTradingAccount.balance < val) {
@@ -71,7 +75,7 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
           prev.map(a => a.id === selectedAccId ? { ...a, balance: a.balance - val, equity: a.equity - val } : a)
         );
 
-        alert(`Successfully transferred $${val.toFixed(2)} from Trading Account to Main Wallet`);
+        alert(`Successfully transferred ${formatCurrencyAmount(val, currInfo)} from Trading Account to Main Wallet`);
       }
 
       setTransferAmount('');
@@ -89,7 +93,7 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
       id: 'acc_' + Math.random().toString(36).substring(2, 7),
       number: `SGT-${Math.floor(100000 + Math.random() * 900000)}-${newAccType.includes('Demo') ? 'DEMO' : 'LIVE'}`,
       type: newAccType,
-      currency: 'USD',
+      currency: currInfo.code,
       leverage: newAccLeverage,
       balance: newAccType.includes('Demo') ? 100000 : 0,
       equity: newAccType.includes('Demo') ? 100000 : 0,

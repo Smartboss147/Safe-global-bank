@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { formatCurrencyAmount, getCurrencyByCountry, getCurrencyInfo, getCurrencySymbol } from '../utils/currency';
 import { 
   Users, ArrowRightLeft, Activity, ShieldAlert, FileText, CheckCircle, XCircle, 
   DollarSign, Lock, Unlock, RefreshCw, Eye, Edit3, Trash2, ShieldCheck, UserX, 
@@ -36,11 +37,49 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [notifTitle, setNotifTitle] = useState('');
   const [notifBody, setNotifBody] = useState('');
 
+  // Broker & Trading Management State
+  const [tradingInstruments, setTradingInstruments] = useState([
+    { id: 'eurusd', symbol: 'EUR/USD', category: 'Forex', spread: '0.8 pips', maxLeverage: '1:500', status: 'Open' },
+    { id: 'btcusd', symbol: 'BTC/USD', category: 'Crypto', spread: '12.5 pts', maxLeverage: '1:100', status: 'Open' },
+    { id: 'xauusd', symbol: 'XAU/USD', category: 'Commodities', spread: '1.2 pips', maxLeverage: '1:200', status: 'Open' },
+    { id: 'aapl', symbol: 'AAPL', category: 'Stocks', spread: '0.15 pts', maxLeverage: '1:20', status: 'Closed' }
+  ]);
+
+  // Investment Plans State
+  const [investmentPlans, setInvestmentPlans] = useState([
+    { id: 'plan_1', name: 'Starter Yield', roi: '5.5%', duration: '7 Days', minInv: 100, maxInv: 5000, active: true },
+    { id: 'plan_2', name: 'Premium Staking', roi: '14.2%', duration: '30 Days', minInv: 5000, maxInv: 50000, active: true },
+    { id: 'plan_3', name: 'Institutional Alpha', roi: '32.0%', duration: '90 Days', minInv: 50000, maxInv: 1000000, active: true }
+  ]);
+
+  // Payment Gateways State
+  const [gateways, setGateways] = useState([
+    { id: 'gw_crypto', name: 'Crypto Direct (USDT/BTC)', minDeposit: 10, maxDeposit: 100000, fee: '0%', status: 'Active' },
+    { id: 'gw_wire', name: 'Global SWIFT/SEPA Wire', minDeposit: 500, maxDeposit: 500000, fee: '0.5%', status: 'Active' },
+    { id: 'gw_card', name: 'Credit / Debit Card (Visa/MC)', minDeposit: 50, maxDeposit: 10000, fee: '1.8%', status: 'Active' }
+  ]);
+
+  // Referral & Bonus State
+  const [referralBonus, setReferralBonus] = useState({ refRate: '5%', signupBonus: '25.00', status: 'Active' });
+
+  // System Settings State
+  const [systemSettings, setSystemSettings] = useState({
+    platformName: 'Safe Global Trade & Banking',
+    maintenanceMode: false,
+    registrationEnabled: true,
+    require2FA: false,
+    defaultCurrency: 'USD'
+  });
+  const [supportedCountries, setSupportedCountries] = useState<any[]>([]);
+
   const navigate = useNavigate();
 
   const fetchData = async () => {
     setLoading(true);
     try {
+      const { data: countriesData } = await supabase.from('supported_countries').select('*').order('country_name');
+      if (countriesData) setSupportedCountries(countriesData);
+
       // 1. Fetch profiles
       const { data: profilesData } = await supabase.from('profiles').select('*');
       
@@ -205,7 +244,7 @@ export default function AdminDashboard({ user }: { user: any }) {
       setUsers(Array.from(userMap.values()));
 
     } catch (error) {
-      console.error("Error fetching admin data:", error);
+      console.log("Error fetching admin data:", error);
     } finally {
       setLoading(false);
     }
@@ -237,11 +276,12 @@ export default function AdminDashboard({ user }: { user: any }) {
       const { data: insertedLog } = await supabase.from('audit_logs').insert([logData]).select().single();
       if (insertedLog) setAuditLogs(prev => [insertedLog, ...prev]);
     } catch (e) {
-      console.error("Error logging audit:", e);
+      console.log("Error logging audit:", e);
     }
   };
 
   const handleUpdateBalance = async (accountId: string, newBalance: number, reason: string) => {
+    const userCurrInfo = getCurrencyByCountry(selectedUser?.country);
     try {
       let targetAcc = accounts.find(a => a.id === accountId || a.user_id === selectedUser?.id || a.userId === selectedUser?.id);
       const oldBalance = targetAcc ? Number(targetAcc.balance) || 0 : 0;
@@ -253,7 +293,9 @@ export default function AdminDashboard({ user }: { user: any }) {
           user_id: selectedUser.id,
           account_number: targetAcc?.account_number || `ACC-${selectedUser.id.substring(0, 6).toUpperCase()}`,
           balance: newBalance,
-          currency: 'USD',
+          currency: userCurrInfo.code,
+          currency_code: userCurrInfo.code,
+          currency_symbol: userCurrInfo.symbol,
           account_type: 'checking'
         }], { onConflict: 'user_id' }).select().single();
         if (newAcc) targetAcc = newAcc;
@@ -270,7 +312,9 @@ export default function AdminDashboard({ user }: { user: any }) {
             user_id: selectedUser.id,
             account_number: targetAcc?.account_number || `ACC-${selectedUser.id.substring(0, 6).toUpperCase()}`,
             balance: newBalance,
-            currency: 'USD'
+            currency: userCurrInfo.code,
+            currency_code: userCurrInfo.code,
+            currency_symbol: userCurrInfo.symbol
           }];
         }
         return prev;
@@ -282,21 +326,21 @@ export default function AdminDashboard({ user }: { user: any }) {
         account_id: targetAcc?.id || accountId,
         type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
         amount: Math.abs(newBalance - oldBalance),
-        currency: targetAcc?.currency || 'USD',
+        currency: targetAcc?.currency_code || targetAcc?.currency || userCurrInfo.code,
         status: 'completed',
         description: `Admin balance adjustment: ${reason}`,
         created_at: new Date().toISOString()
       }]);
 
-      await logAuditAction('WALLET_ADJUSTMENT', selectedUser?.id || accountId, `Balance adjusted from $${oldBalance.toFixed(2)} to $${newBalance.toFixed(2)}. Reason: ${reason}`);
-      setMsg({ type: 'success', text: `Wallet balance updated to $${newBalance.toFixed(2)} and logged in transaction ledger.` });
+      await logAuditAction('WALLET_ADJUSTMENT', selectedUser?.id || accountId, `Balance adjusted from ${formatCurrencyAmount(oldBalance, userCurrInfo)} to ${formatCurrencyAmount(newBalance, userCurrInfo)}. Reason: ${reason}`);
+      setMsg({ type: 'success', text: `Wallet balance updated to ${formatCurrencyAmount(newBalance, userCurrInfo)} and logged in transaction ledger.` });
       setIsWalletModalOpen(false);
       fetchData();
     } catch (err: any) {
-      console.error("Error updating balance:", err);
+      console.log("Error updating balance:", err);
       // Fallback local update if network error occurs
       setAccounts(prev => prev.map(a => (a.id === accountId || a.user_id === selectedUser?.id) ? { ...a, balance: newBalance } : a));
-      setMsg({ type: 'success', text: `Wallet balance updated locally to $${newBalance.toFixed(2)}.` });
+      setMsg({ type: 'success', text: `Wallet balance updated locally to ${formatCurrencyAmount(newBalance, userCurrInfo)}.` });
       setIsWalletModalOpen(false);
     }
   };
@@ -347,19 +391,24 @@ export default function AdminDashboard({ user }: { user: any }) {
     u.lastName?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Sidebar Menu Items matching attached screenshot
+  // Sidebar Menu Items matching full Role-Based Admin specification
   const sidebarNavItems = [
     { id: 'overview', label: 'Dashboard', icon: <Zap size={18} /> },
     { id: 'requests', label: 'Inbound Requests', icon: <FileText size={18} />, badge: pendingTransactions > 0 ? pendingTransactions : null },
     { id: 'users', label: 'Users', icon: <Users size={18} /> },
     { id: 'wallets', label: 'Wallet Management', icon: <DollarSign size={18} /> },
+    { id: 'broker', label: 'Broker & Trading', icon: <Activity size={18} /> },
+    { id: 'investments', label: 'Investment Plans', icon: <Layers size={18} /> },
+    { id: 'gateways', label: 'Payment Gateways', icon: <ArrowDownLeft size={18} /> },
     { id: 'deposits', label: 'Deposits', icon: <ArrowDownLeft size={18} /> },
     { id: 'withdrawals', label: 'Withdrawals', icon: <ArrowUpRight size={18} /> },
     { id: 'transactions', label: 'Transactions', icon: <History size={18} /> },
-    { id: 'audit', label: 'Audit Logs', icon: <Terminal size={18} /> },
-    { id: 'reports', label: 'Reports', icon: <FileSpreadsheet size={18} /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
-    { id: 'settings', label: 'Settings', icon: <SettingsIcon size={18} /> },
+    { id: 'content', label: 'Content & CMS', icon: <FileSpreadsheet size={18} /> },
+    { id: 'referrals', label: 'Referrals & Bonuses', icon: <Sparkles size={18} /> },
+    { id: 'currencies', label: 'Country & Currencies', icon: <Database size={18} /> },
+    { id: 'security', label: 'Audit Logs & Security', icon: <Terminal size={18} /> },
+    { id: 'settings', label: 'System Settings', icon: <SettingsIcon size={18} /> },
   ];
 
   const filteredSidebarItems = sidebarNavItems.filter(item => 
@@ -738,7 +787,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                             {acc?.account_number || acc?.accountNumber || 'ACC-109284'}
                           </td>
                           <td className="p-3.5 font-black text-emerald-400">
-                            ${Number(acc?.balance || 1000).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                            {formatCurrencyAmount(Number(acc?.balance || 0), getCurrencyInfo(acc?.currency_code || acc?.currency || u.currency_code || u.country || 'USD'))}
                           </td>
                           <td className="p-3.5">
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
@@ -762,8 +811,8 @@ export default function AdminDashboard({ user }: { user: any }) {
                                     id: `acc_${u.id}`,
                                     user_id: u.id,
                                     account_number: 'ACC-' + u.id.substring(0, 6).toUpperCase(),
-                                    balance: 1000,
-                                    currency: 'USD'
+                                    balance: 0,
+                                    currency: getCurrencyByCountry(u.country).code
                                   };
                                   setSelectedUser({ ...u, account: userAcc });
                                   setWalletActionType('adjust');
@@ -873,7 +922,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                             {acc.type || acc.accountType || 'Checking'}
                           </span>
                         </td>
-                        <td className="p-3.5 font-black text-emerald-400">${Number(acc.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3.5 font-black text-emerald-400">{formatCurrencyAmount(Number(acc.balance || 0), getCurrencyInfo(acc?.currency_code || acc?.currency || u?.currency_code || u?.country || 'USD'))}</td>
                         <td className="p-3.5 text-right space-x-2">
                           <button 
                             onClick={() => {
@@ -1023,13 +1072,339 @@ export default function AdminDashboard({ user }: { user: any }) {
           </div>
         )}
 
-        {/* TAB 8: AUDIT LOGS */}
-        {activeTab === 'audit' && (
+        {/* TAB: BROKER & TRADING MANAGEMENT */}
+        {activeTab === 'broker' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Broker & Trading Terminal Controls</h3>
+                <p className="text-xs text-gray-400">Manage supported trading instruments, market statuses, spreads, and maximum leverage limits.</p>
+              </div>
+              <button 
+                onClick={() => {
+                  const sym = prompt('Enter Instrument Symbol (e.g., SOL/USD):');
+                  if (!sym) return;
+                  const cat = prompt('Enter Category (Forex / Crypto / Commodities / Stocks):', 'Crypto') || 'Crypto';
+                  setTradingInstruments(prev => [...prev, {
+                    id: 'inst_' + Math.random().toString(36).substring(2, 7),
+                    symbol: sym.toUpperCase(),
+                    category: cat,
+                    spread: '1.0 pips',
+                    maxLeverage: '1:100',
+                    status: 'Open'
+                  }]);
+                  logAuditAction('TRADING_INSTRUMENT_ADDED', 'SYSTEM', `Added instrument ${sym.toUpperCase()}`);
+                }}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition"
+              >
+                <PlusCircle size={16} /> Add Trading Asset
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-[#181a22] text-[10px] font-mono uppercase text-gray-400">
+                  <tr>
+                    <th className="p-3.5 border-b border-white/10">Symbol</th>
+                    <th className="p-3.5 border-b border-white/10">Category</th>
+                    <th className="p-3.5 border-b border-white/10">Spread</th>
+                    <th className="p-3.5 border-b border-white/10">Max Leverage</th>
+                    <th className="p-3.5 border-b border-white/10">Market Status</th>
+                    <th className="p-3.5 border-b border-white/10 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="text-xs font-medium divide-y divide-white/5">
+                  {tradingInstruments.map((inst) => (
+                    <tr key={inst.id} className="hover:bg-white/5">
+                      <td className="p-3.5 font-bold text-white font-mono">{inst.symbol}</td>
+                      <td className="p-3.5 text-indigo-300">{inst.category}</td>
+                      <td className="p-3.5 text-gray-300 font-mono">{inst.spread}</td>
+                      <td className="p-3.5 text-gray-300 font-mono">{inst.maxLeverage}</td>
+                      <td className="p-3.5">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          inst.status === 'Open' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                          {inst.status}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-right space-x-2">
+                        <button 
+                          onClick={() => {
+                            setTradingInstruments(prev => prev.map(i => i.id === inst.id ? { ...i, status: i.status === 'Open' ? 'Closed' : 'Open' } : i));
+                            logAuditAction('MARKET_STATUS_TOGGLED', 'SYSTEM', `Toggled ${inst.symbol} to ${inst.status === 'Open' ? 'Closed' : 'Open'}`);
+                          }}
+                          className="px-3 py-1 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-lg text-[11px] font-bold transition"
+                        >
+                          Toggle Market
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: INVESTMENT PLANS */}
+        {activeTab === 'investments' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Investment Plans & Yield Staking</h3>
+                <p className="text-xs text-gray-400">Configure yield percentage rates, lock durations, and minimum investment thresholds.</p>
+              </div>
+              <button 
+                onClick={() => {
+                  const name = prompt('Plan Name:');
+                  if (!name) return;
+                  const roi = prompt('ROI Rate (%):', '8.5%') || '8.5%';
+                  const dur = prompt('Duration:', '14 Days') || '14 Days';
+                  setInvestmentPlans(prev => [...prev, {
+                    id: 'plan_' + Math.random().toString(36).substring(2, 7),
+                    name,
+                    roi,
+                    duration: dur,
+                    minInv: 250,
+                    maxInv: 25000,
+                    active: true
+                  }]);
+                  logAuditAction('INVESTMENT_PLAN_CREATED', 'SYSTEM', `Created plan ${name}`);
+                }}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition"
+              >
+                <PlusCircle size={16} /> Create Investment Plan
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {investmentPlans.map((plan) => (
+                <div key={plan.id} className="p-5 bg-[#181a22] border border-white/10 rounded-2xl space-y-3 relative">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-extrabold text-white text-base">{plan.name}</h4>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${plan.active ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-gray-500/10 text-gray-400'}`}>
+                      {plan.active ? 'ACTIVE' : 'DISABLED'}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-white/5 space-y-1 text-xs text-gray-300">
+                    <p className="flex justify-between"><span>Yield / ROI:</span> <span className="font-black text-emerald-400">{plan.roi}</span></p>
+                    <p className="flex justify-between"><span>Duration:</span> <span className="font-bold text-white">{plan.duration}</span></p>
+                    <p className="flex justify-between"><span>Min Deposit:</span> <span className="font-bold text-white">${plan.minInv}</span></p>
+                    <p className="flex justify-between"><span>Max Cap:</span> <span className="font-bold text-white">${plan.maxInv.toLocaleString()}</span></p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setInvestmentPlans(prev => prev.map(p => p.id === plan.id ? { ...p, active: !p.active } : p));
+                      logAuditAction('INVESTMENT_PLAN_TOGGLED', 'SYSTEM', `Toggled plan ${plan.name}`);
+                    }}
+                    className="w-full mt-3 py-2 bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 rounded-xl font-bold text-xs transition"
+                  >
+                    {plan.active ? 'Disable Plan' : 'Enable Plan'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: PAYMENT GATEWAYS */}
+        {activeTab === 'gateways' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
+            <h3 className="text-lg font-bold text-white">Payment Gateway & Fee Management</h3>
+            <div className="space-y-4">
+              {gateways.map((gw) => (
+                <div key={gw.id} className="p-4 bg-[#181a22] border border-white/10 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="space-y-1">
+                    <p className="font-bold text-white text-sm">{gw.name}</p>
+                    <p className="text-xs text-gray-400">Min: ${gw.minDeposit} | Max: ${gw.maxDeposit.toLocaleString()} | Fee: {gw.fee}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-[10px] font-bold">
+                      {gw.status}
+                    </span>
+                    <button 
+                      onClick={() => {
+                        const newFee = prompt(`Update Processing Fee % for ${gw.name}:`, gw.fee);
+                        if (newFee !== null) {
+                          setGateways(prev => prev.map(g => g.id === gw.id ? { ...g, fee: newFee } : g));
+                          logAuditAction('GATEWAY_FEE_UPDATED', 'SYSTEM', `Updated ${gw.name} fee to ${newFee}`);
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition"
+                    >
+                      Update Fee
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: CONTENT & CMS */}
+        {activeTab === 'content' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6 max-w-2xl">
+            <h3 className="text-lg font-bold text-white">CMS, Banners & Legal Policy Controls</h3>
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-gray-400 font-bold mb-1">Homepage Announcement Banner</label>
+                <input 
+                  type="text"
+                  defaultValue="Safe Global Bank 2026 Q3 Compliance & Audit Complete. Global ISO 27001 Certified."
+                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-medium focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 font-bold mb-1">Terms & Conditions Last Updated</label>
+                <input 
+                  type="text"
+                  defaultValue="Effective Date: July 2026 - Revision v4.2"
+                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-medium focus:outline-none"
+                />
+              </div>
+              <button 
+                onClick={() => {
+                  setMsg({ type: 'success', text: 'Content policies updated successfully.' });
+                  logAuditAction('CMS_CONTENT_UPDATED', 'SYSTEM', 'Updated platform legal banners & terms');
+                }}
+                className="py-3 px-6 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition"
+              >
+                Save CMS Banners
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: REFERRALS & BONUSES */}
+        {activeTab === 'referrals' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6 max-w-xl">
+            <h3 className="text-lg font-bold text-white">Referrals & Promotional Bonuses</h3>
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-gray-400 font-bold mb-1">Referral Commission Rate (%)</label>
+                <input 
+                  type="text" 
+                  value={referralBonus.refRate}
+                  onChange={e => setReferralBonus(prev => ({ ...prev, refRate: e.target.value }))}
+                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-bold"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-400 font-bold mb-1">New User Signup Bonus ($ USD)</label>
+                <input 
+                  type="text" 
+                  value={referralBonus.signupBonus}
+                  onChange={e => setReferralBonus(prev => ({ ...prev, signupBonus: e.target.value }))}
+                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-bold"
+                />
+              </div>
+              <button 
+                onClick={() => {
+                  setMsg({ type: 'success', text: 'Referral and bonus settings updated.' });
+                  logAuditAction('REFERRAL_SETTINGS_UPDATED', 'SYSTEM', `Updated referral rate to ${referralBonus.refRate}`);
+                }}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition"
+              >
+                Save Bonus Configuration
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB: COUNTRY & CURRENCIES */}
+        {activeTab === 'currencies' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Country & Supported Currency Registry</h3>
+                <p className="text-xs text-gray-400">Automatic country-to-currency binding for incoming registrations.</p>
+              </div>
+              <button 
+                onClick={async () => {
+                  const countryName = prompt('Enter Country Name (e.g., Brazil):');
+                  if (!countryName) return;
+                  const currencyCode = prompt('Enter Currency Code (e.g., BRL):');
+                  if (!currencyCode) return;
+                  const currencySymbol = prompt('Enter Currency Symbol (e.g., R$):');
+                  if (!currencySymbol) return;
+
+                  try {
+                    await supabase.from('supported_countries').insert([{
+                      country_name: countryName,
+                      currency_code: currencyCode.toUpperCase(),
+                      currency_symbol: currencySymbol,
+                      is_active: true
+                    }]);
+                    await logAuditAction('COUNTRY_ADDED', 'SYSTEM', `Added supported country ${countryName} with currency ${currencyCode.toUpperCase()}`);
+                    fetchData();
+                    setMsg({ type: 'success', text: `Country ${countryName} added successfully.` });
+                  } catch (err: any) {
+                    console.log('Error adding country:', err);
+                    setMsg({ type: 'error', text: err.message || 'Failed to add country.' });
+                  }
+                }}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition"
+              >
+                <PlusCircle size={16} /> Add Supported Country
+              </button>
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+              {supportedCountries.map((c) => (
+                <div key={c.id} className="p-4 bg-[#181a22] border border-white/5 rounded-2xl space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-extrabold text-white text-base">{c.currency_symbol} {c.currency_code}</span>
+                    <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${c.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-gray-500/10 text-gray-400'}`}>
+                      {c.is_active ? 'ACTIVE' : 'DISABLED'}
+                    </span>
+                  </div>
+                  <p className="text-gray-300 font-semibold">{c.country_name}</p>
+                  
+                  <div className="pt-3 border-t border-white/10 flex gap-2">
+                    <button 
+                      onClick={async () => {
+                        try {
+                          await supabase.from('supported_countries').update({ is_active: !c.is_active }).eq('id', c.id);
+                          await logAuditAction('COUNTRY_STATUS_TOGGLED', 'SYSTEM', `Toggled country ${c.country_name} to ${!c.is_active ? 'Active' : 'Disabled'}`);
+                          fetchData();
+                        } catch (err) {
+                          console.log(err);
+                        }
+                      }}
+                      className="flex-1 py-1.5 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-lg text-[11px] font-bold transition"
+                    >
+                      {c.is_active ? 'Disable' : 'Enable'}
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        if (confirm(`Remove ${c.country_name} from supported list?`)) {
+                          try {
+                            await supabase.from('supported_countries').delete().eq('id', c.id);
+                            await logAuditAction('COUNTRY_DELETED', 'SYSTEM', `Deleted country ${c.country_name}`);
+                            fetchData();
+                          } catch (err) {
+                            console.log(err);
+                          }
+                        }
+                      }}
+                      className="flex-1 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/10 rounded-lg text-[11px] font-bold transition"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: AUDIT LOGS & SECURITY */}
+        {activeTab === 'security' && (
           <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
             <div className="flex justify-between items-center">
               <div>
-                <h3 className="text-lg font-bold text-white">Cryptographic Audit Logs</h3>
-                <p className="text-xs text-gray-400">All administrative events and balance overrides recorded in immutable sequence.</p>
+                <h3 className="text-lg font-bold text-white">Cryptographic Audit Logs & Security Engine</h3>
+                <p className="text-xs text-gray-400">All administrative actions recorded in immutable timeline.</p>
               </div>
               <button 
                 onClick={() => {
@@ -1043,7 +1418,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                 }}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition"
               >
-                <Download size={14} /> Export JSON Logs
+                <Download size={14} /> Export Audit JSON
               </button>
             </div>
 
@@ -1067,77 +1442,60 @@ export default function AdminDashboard({ user }: { user: any }) {
           </div>
         )}
 
-        {/* TAB 9: REPORTS */}
-        {activeTab === 'reports' && (
-          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
-            <h3 className="text-lg font-bold text-white">System Reports & Financial Analytics</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="p-4 bg-[#181a22] border border-white/5 rounded-2xl">
-                <p className="text-xs text-gray-400">Total System Deposits</p>
-                <p className="text-xl font-black text-emerald-400 mt-1">${totalWalletBalance.toFixed(2)}</p>
-              </div>
-              <div className="p-4 bg-[#181a22] border border-white/5 rounded-2xl">
-                <p className="text-xs text-gray-400">Active User Accounts</p>
-                <p className="text-xl font-black text-indigo-400 mt-1">{activeUsers}</p>
-              </div>
-              <div className="p-4 bg-[#181a22] border border-white/5 rounded-2xl">
-                <p className="text-xs text-gray-400">Compliance Pass Rate</p>
-                <p className="text-xl font-black text-teal-400 mt-1">{totalUsers ? Math.round((verifiedUsers / totalUsers) * 100) : 100}%</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 10: NOTIFICATIONS */}
-        {activeTab === 'notifications' && (
-          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-5 max-w-xl">
-            <h3 className="text-lg font-bold text-white">Broadcast System Notifications</h3>
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="block text-gray-400 font-bold mb-1">Notification Title</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Scheduled Maintenance Notice" 
-                  value={notifTitle}
-                  onChange={e => setNotifTitle(e.target.value)}
-                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-semibold focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-gray-400 font-bold mb-1">Message Body</label>
-                <textarea 
-                  rows={4}
-                  placeholder="Type administrative notice for all bank users..." 
-                  value={notifBody}
-                  onChange={e => setNotifBody(e.target.value)}
-                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-medium focus:outline-none"
-                />
-              </div>
-              <button 
-                onClick={() => {
-                  if (!notifTitle || !notifBody) return alert('Please complete title and body.');
-                  setMsg({ type: 'success', text: 'Broadcast notification sent to all active sessions.' });
-                  setNotifTitle('');
-                  setNotifBody('');
-                }}
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition"
-              >
-                Send Broadcast Message
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 11: SETTINGS */}
+        {/* TAB: SYSTEM SETTINGS */}
         {activeTab === 'settings' && (
           <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6 max-w-xl">
-            <h3 className="text-lg font-bold text-white">Admin Terminal Settings</h3>
+            <h3 className="text-lg font-bold text-white">System & Platform Settings</h3>
+            
             <div className="space-y-4 text-xs">
-              <div className="p-4 bg-[#181a22] border border-white/5 rounded-xl space-y-2">
-                <p className="font-bold text-white">Security Override Mode</p>
-                <p className="text-gray-400">Enforce multi-factor verification for balance edits above $10,000.</p>
-                <span className="inline-block px-2.5 py-1 bg-emerald-500/10 text-emerald-400 font-bold rounded-full">ENABLED</span>
+              <div>
+                <label className="block text-gray-400 font-bold mb-1">Platform Name</label>
+                <input 
+                  type="text" 
+                  value={systemSettings.platformName}
+                  onChange={e => setSystemSettings(prev => ({ ...prev, platformName: e.target.value }))}
+                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-bold"
+                />
               </div>
+
+              <div className="p-4 bg-[#181a22] border border-white/5 rounded-2xl flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-white">Maintenance Mode</p>
+                  <p className="text-gray-400 text-[11px]">Prevent client logins during scheduled updates</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setSystemSettings(prev => ({ ...prev, maintenanceMode: !prev.maintenanceMode }));
+                    logAuditAction('MAINTENANCE_MODE_TOGGLED', 'SYSTEM', `Maintenance mode set to ${!systemSettings.maintenanceMode}`);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold ${systemSettings.maintenanceMode ? 'bg-rose-600 text-white' : 'bg-white/10 text-gray-300'}`}
+                >
+                  {systemSettings.maintenanceMode ? 'ON (ACTIVE)' : 'OFF'}
+                </button>
+              </div>
+
+              <div className="p-4 bg-[#181a22] border border-white/5 rounded-2xl flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-white">New User Registrations</p>
+                  <p className="text-gray-400 text-[11px]">Allow new signups on the public portal</p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setSystemSettings(prev => ({ ...prev, registrationEnabled: !prev.registrationEnabled }));
+                    logAuditAction('REGISTRATION_TOGGLED', 'SYSTEM', `Registrations set to ${!systemSettings.registrationEnabled}`);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold ${systemSettings.registrationEnabled ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}
+                >
+                  {systemSettings.registrationEnabled ? 'ENABLED' : 'DISABLED'}
+                </button>
+              </div>
+
+              <button 
+                onClick={() => setMsg({ type: 'success', text: 'System settings saved.' })}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition"
+              >
+                Save Platform Settings
+              </button>
             </div>
           </div>
         )}
@@ -1219,7 +1577,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                 <p className="text-gray-400">User: <span className="font-bold text-white">{selectedUser.displayName || selectedUser.email}</span></p>
                 <p className="text-gray-400">Email: <span className="font-bold text-indigo-300">{selectedUser.email}</span></p>
                 <p className="text-gray-400">Account #: <span className="font-mono text-white">{selectedUser.account?.account_number || selectedUser.account?.accountNumber || 'ACC-100234'}</span></p>
-                <p className="text-gray-400">Current Balance: <span className="font-bold text-emerald-400">${Number(selectedUser.account?.balance || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></p>
+                <p className="text-gray-400">Current Balance: <span className="font-bold text-emerald-400">{formatCurrencyAmount(Number(selectedUser.account?.balance || 0), getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD'))}</span></p>
               </div>
 
               <div>
@@ -1236,7 +1594,7 @@ export default function AdminDashboard({ user }: { user: any }) {
               </div>
 
               <div>
-                <label className="block font-bold text-gray-400 uppercase mb-1">Amount ($)</label>
+                <label className="block font-bold text-gray-400 uppercase mb-1">Amount</label>
                 <input 
                   type="number"
                   step="0.01"
@@ -1276,7 +1634,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                   else if (walletActionType === 'debit') {
                     newBal = currentBal - amt;
                     if (newBal < 0) {
-                      if (!confirm(`Warning: Debiting $${amt.toFixed(2)} will set account balance below zero (to -$${Math.abs(newBal).toFixed(2)}). Do you wish to proceed?`)) {
+                      if (!confirm(`Warning: Debiting ${formatCurrencyAmount(amt, getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD'))} will set account balance below zero (to -${formatCurrencyAmount(Math.abs(newBal), getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD'))}). Do you wish to proceed?`)) {
                         return;
                       }
                     }

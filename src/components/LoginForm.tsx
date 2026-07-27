@@ -5,6 +5,7 @@ import { Eye, EyeOff, Fingerprint, ChevronLeft, ChevronRight, CheckCircle2, User
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { syncRegisteredUser } from '../utils/profile';
+import { getCurrencyByCountry, POPULAR_COUNTRIES } from '../utils/currency';
 
 export default function LoginForm({ user }: { user?: any }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -282,6 +283,8 @@ export default function LoginForm({ user }: { user?: any }) {
     </motion.div>
   );
 
+  const detectedCurrency = getCurrencyByCountry(signupData.country);
+
   const renderSignupStep2 = () => (
     <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-4">
       <div>
@@ -306,16 +309,41 @@ export default function LoginForm({ user }: { user?: any }) {
           <input required type="text" className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={signupData.state} onChange={e => updateSignupData('state', e.target.value)} />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">ZIP / Postal Code *</label>
           <input required type="text" className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={signupData.zip} onChange={e => updateSignupData('zip', e.target.value)} />
         </div>
         <div>
           <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">Country *</label>
-          <input required type="text" className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" value={signupData.country} onChange={e => updateSignupData('country', e.target.value)} />
+          <input 
+            required 
+            type="text" 
+            list="country-options"
+            placeholder="Select or type country" 
+            className="w-full p-3.5 bg-gray-50/50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium text-gray-900" 
+            value={signupData.country} 
+            onChange={e => updateSignupData('country', e.target.value)} 
+          />
+          <datalist id="country-options">
+            {POPULAR_COUNTRIES.map(c => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
         </div>
       </div>
+
+      {signupData.country && (
+        <div className="p-3.5 bg-emerald-50/90 border border-emerald-200/90 rounded-2xl flex items-center justify-between text-xs transition-all">
+          <div className="flex items-center gap-2 text-emerald-900 font-semibold">
+            <Coins size={18} className="text-emerald-600 shrink-0" />
+            <span>Default Account Currency: <strong className="font-extrabold">{detectedCurrency.name} ({detectedCurrency.code})</strong></span>
+          </div>
+          <span className="font-black px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs shadow-xs">
+            {detectedCurrency.symbol}
+          </span>
+        </div>
+      )}
     </motion.div>
   );
 
