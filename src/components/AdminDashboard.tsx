@@ -20,6 +20,7 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [cryptoTxs, setCryptoTxs] = useState<any[]>([]);
   const [kycDocs, setKycDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -74,8 +75,8 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   const navigate = useNavigate();
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const { data: countriesData } = await supabase.from('supported_countries').select('*').order('country_name');
       if (countriesData) setSupportedCountries(countriesData);
@@ -103,6 +104,30 @@ export default function AdminDashboard({ user }: { user: any }) {
       const { data: kycData } = await supabase.from('kyc_documents').select('*');
       if (kycData) setKycDocs(kycData);
 
+      // 7. Fetch investment plans
+      const { data: plansData } = await supabase.from('investment_plans').select('*');
+      if (plansData) setInvestmentPlans(plansData.map(p => ({
+        id: p.id,
+        name: p.name,
+        roi: `${p.roi_percentage}%`,
+        duration: `${p.duration_days} Days`,
+        minInv: p.min_amount,
+        maxInv: p.max_amount,
+        active: p.is_active
+      })));
+
+      // 8. Fetch market assets
+      const { data: assetsData } = await supabase.from('market_assets').select('*');
+      if (assetsData) setTradingInstruments(assetsData.map(a => ({
+        id: a.id,
+        symbol: a.symbol,
+        name: a.name,
+        category: 'Market', // Default category
+        status: a.is_active ? 'Open' : 'Closed',
+        spread: 'Dynamic',
+        maxLeverage: '1:500'
+      })));
+
       // Robust User Aggregation Engine (Supabase strictly)
       const userMap = new Map<string, any>();
 
@@ -126,18 +151,35 @@ export default function AdminDashboard({ user }: { user: any }) {
         });
       }
 
+      // Ensure the currently authenticated admin is present if missing
+      if (user && user.id && !userMap.has(user.id)) {
+        userMap.set(user.id, {
+          id: user.id,
+          email: user.email || 'admin@safeglobalbank.com',
+          displayName: user.displayName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Administrator',
+          firstName: user.first_name || '',
+          lastName: user.last_name || '',
+          phone: user.phone || '',
+          kyc_status: 'verified',
+          status: 'active',
+          role: user.role || 'admin',
+          created_at: user.created_at || new Date().toISOString()
+        });
+      }
+
       setUsers(Array.from(userMap.values()));
     } catch (error) {
       console.log("Error fetching admin data:", error);
     } finally {
       setLoading(false);
+      setHasLoaded(true);
     }
   };
 
   useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000);
-    const handleUserSyncEvent = () => fetchData();
+    fetchData(); // Initial full load
+    const interval = setInterval(() => fetchData(true), 10000); // Silent background updates
+    const handleUserSyncEvent = () => fetchData(true);
     window.addEventListener('user_registered_or_updated', handleUserSyncEvent);
     return () => {
       clearInterval(interval);
@@ -295,7 +337,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     item.label.toLowerCase().includes(sidebarSearch.toLowerCase())
   );
 
-  if (loading && users.length === 0) {
+  if (loading && !hasLoaded) {
     return (
       <div className="min-h-screen bg-[#0A0B0E] flex items-center justify-center text-white">
         <div className="text-center space-y-4">
