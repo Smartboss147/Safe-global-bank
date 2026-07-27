@@ -103,10 +103,10 @@ export default function AdminDashboard({ user }: { user: any }) {
       const { data: kycData } = await supabase.from('kyc_documents').select('*');
       if (kycData) setKycDocs(kycData);
 
-      // Robust User Aggregation Engine
+      // Robust User Aggregation Engine (Supabase strictly)
       const userMap = new Map<string, any>();
 
-      // Populate from Supabase profiles
+      // Populate strictly from Supabase profiles
       if (profilesData && Array.isArray(profilesData)) {
         profilesData.forEach(p => {
           if (p && p.id) {
@@ -117,7 +117,7 @@ export default function AdminDashboard({ user }: { user: any }) {
               firstName: p.first_name || p.firstName || '',
               lastName: p.last_name || p.lastName || '',
               phone: p.phone || '',
-              kyc_status: p.kyc_status || 'verified',
+              kyc_status: p.kyc_status || 'Unverified',
               status: p.status || 'active',
               role: p.role || 'user',
               created_at: p.created_at || new Date().toISOString()
@@ -126,123 +126,7 @@ export default function AdminDashboard({ user }: { user: any }) {
         });
       }
 
-      // Populate from accounts table if profile missing
-      if (accountsData && Array.isArray(accountsData)) {
-        accountsData.forEach(acc => {
-          const uId = acc.user_id || acc.userId;
-          if (uId && !userMap.has(uId)) {
-            userMap.set(uId, {
-              id: uId,
-              email: acc.email || `user_${uId.substring(0, 6)}@safeglobalbank.com`,
-              displayName: acc.account_name || acc.accountName || `Account #${acc.account_number || acc.accountNumber || uId.substring(0, 8)}`,
-              firstName: '',
-              lastName: '',
-              phone: '',
-              kyc_status: 'verified',
-              status: 'active',
-              role: 'user',
-              created_at: acc.created_at || new Date().toISOString()
-            });
-          }
-        });
-      }
-
-      // Populate from local storage overrides
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('local_profile_')) {
-          const uId = key.replace('local_profile_', '');
-          try {
-            const localP = JSON.parse(localStorage.getItem(key) || '{}');
-            if (localP) {
-              const existing = userMap.get(uId) || { id: uId, created_at: new Date().toISOString() };
-              userMap.set(uId, {
-                ...existing,
-                email: localP.email || existing.email || `user_${uId.substring(0, 6)}@safeglobalbank.com`,
-                displayName: localP.display_name || localP.displayName || existing.displayName || `${localP.first_name || ''} ${localP.last_name || ''}`.trim(),
-                firstName: localP.first_name || localP.firstName || existing.firstName || '',
-                lastName: localP.last_name || localP.lastName || existing.lastName || '',
-                phone: localP.phone || existing.phone || '',
-                kyc_status: localP.kyc_status || existing.kyc_status || 'verified',
-                status: localP.status || existing.status || 'active',
-                role: localP.role || existing.role || 'user'
-              });
-            }
-          } catch (e) {
-            console.warn('Error reading local profile key:', e);
-          }
-        }
-      }
-
-      // Populate from central user registry array in localStorage
-      try {
-        const rawReg = localStorage.getItem('all_registered_users');
-        if (rawReg) {
-          const regList = JSON.parse(rawReg);
-          if (Array.isArray(regList)) {
-            regList.forEach((regU: any) => {
-              if (regU && regU.id) {
-                const existing = userMap.get(regU.id);
-                userMap.set(regU.id, {
-                  ...existing,
-                  id: regU.id,
-                  email: regU.email || existing?.email || `user_${regU.id.substring(0, 6)}@safeglobalbank.com`,
-                  displayName: regU.display_name || regU.displayName || existing?.displayName || `${regU.first_name || ''} ${regU.last_name || ''}`.trim() || regU.email?.split('@')[0],
-                  firstName: regU.first_name || regU.firstName || existing?.firstName || '',
-                  lastName: regU.last_name || regU.lastName || existing?.lastName || '',
-                  phone: regU.phone || existing?.phone || '',
-                  kyc_status: regU.kyc_status || existing?.kyc_status || 'verified',
-                  status: regU.status || existing?.status || 'active',
-                  role: regU.role || existing?.role || 'user',
-                  created_at: regU.created_at || existing?.created_at || new Date().toISOString()
-                });
-              }
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('Error reading central all_registered_users registry:', e);
-      }
-
-      // Ensure the currently authenticated administrator/user is always present
-      if (user && user.id) {
-        const existing = userMap.get(user.id);
-        const name = user.displayName || user.user_metadata?.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email?.split('@')[0] || 'Administrator';
-        userMap.set(user.id, {
-          id: user.id,
-          email: user.email || 'admin@safeglobalbank.com',
-          displayName: name,
-          firstName: user.first_name || user.firstName || '',
-          lastName: user.last_name || user.lastName || '',
-          phone: user.phone || '',
-          kyc_status: existing?.kyc_status || 'verified',
-          status: existing?.status || 'active',
-          role: existing?.role || user.role || 'admin',
-          created_at: user.created_at || existing?.created_at || new Date().toISOString(),
-          photoURL: user.photoURL || user.user_metadata?.avatar_url || null,
-          last_sign_in_at: user.last_sign_in_at || new Date().toISOString()
-        });
-      }
-
-      // If userMap is empty, seed clean default administrator
-      if (userMap.size === 0) {
-        const defaultAdmin = {
-          id: user?.id || 'admin_001',
-          email: user?.email || 'admin@safeglobalbank.com',
-          displayName: user?.displayName || user?.user_metadata?.full_name || 'System Administrator',
-          firstName: 'System',
-          lastName: 'Administrator',
-          phone: '+1 800-555-0100',
-          kyc_status: 'verified',
-          status: 'active',
-          role: 'admin',
-          created_at: new Date().toISOString()
-        };
-        userMap.set(defaultAdmin.id, defaultAdmin);
-      }
-
       setUsers(Array.from(userMap.values()));
-
     } catch (error) {
       console.log("Error fetching admin data:", error);
     } finally {
@@ -349,10 +233,6 @@ export default function AdminDashboard({ user }: { user: any }) {
     try {
       const fieldToUpdate = statusField === 'kycStatus' ? 'kyc_status' : statusField;
       await supabase.from('profiles').update({ [fieldToUpdate]: statusValue }).eq('id', userId);
-
-      // Save local profile override as well
-      const existingLocal = JSON.parse(localStorage.getItem(`local_profile_${userId}`) || '{}');
-      localStorage.setItem(`local_profile_${userId}`, JSON.stringify({ ...existingLocal, [fieldToUpdate]: statusValue }));
 
       await logAuditAction(actionName, userId, `Updated ${statusField} to ${statusValue}`);
       setMsg({ type: 'success', text: `User ${actionName.toLowerCase().replace(/_/g, ' ')} successfully.` });
@@ -575,7 +455,7 @@ export default function AdminDashboard({ user }: { user: any }) {
           <div className="flex items-center gap-3">
             <h2 className="text-xl font-extrabold text-white capitalize tracking-tight flex items-center gap-2">
               <Sparkles className="text-indigo-400" size={20} />
-              {activeTab.replace('_', ' ')} Overview
+              {activeTab === 'overview' ? 'System Overview' : `${activeTab.replace('_', ' ')} Overview`}
             </h2>
             <span className="px-2.5 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-lg text-xs font-mono font-bold uppercase">
               {adminRole}
