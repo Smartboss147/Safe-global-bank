@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Wallet, ArrowRightLeft, PlusCircle, ArrowUpRight, ArrowDownLeft, FileText, CheckCircle2, ShieldCheck, DollarSign } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -19,16 +19,36 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
   const [transferAmount, setTransferAmount] = useState('');
   const [transferDirection, setTransferDirection] = useState<'to_trading' | 'to_bank'>('to_trading');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [tradingAccounts, setTradingAccounts] = useState<any[]>([
-    { id: 'acc_live_101', number: 'SGT-994821-LIVE', type: 'Standard Live', currency: currInfo.code, leverage: '1:100', balance: account?.balance !== undefined ? Number(account.balance) : 0, equity: account?.balance !== undefined ? Number(account.balance) : 0, isLive: true },
-    { id: 'acc_demo_102', number: 'SGT-102938-DEMO', type: 'Demo Account', currency: currInfo.code, leverage: '1:500', balance: 100000, equity: 100000, isLive: false }
-  ]);
-  const [selectedAccId, setSelectedAccId] = useState('acc_live_101');
+  const [tradingAccounts, setTradingAccounts] = useState<any[]>([]);
+  const [selectedAccId, setSelectedAccId] = useState('');
+  
+  useEffect(() => {
+    const fetchTradingAccounts = async () => {
+      if (!user) return;
+      const { data } = await supabase.from('trading_accounts').select('*').eq('user_id', user.id);
+      if (data && data.length > 0) {
+        const mapped = data.map(d => ({
+          id: d.id,
+          number: d.account_number,
+          type: 'Standard Live',
+          currency: currInfo.code,
+          leverage: d.leverage || '1:100',
+          balance: d.balance || 0,
+          equity: d.equity || 0,
+          isLive: true
+        }));
+        setTradingAccounts(mapped);
+        setSelectedAccId(mapped[0].id);
+      }
+    };
+    fetchTradingAccounts();
+  }, [user, currInfo.code]);
+
   const [showNewAccModal, setShowNewAccModal] = useState(false);
   const [newAccType, setNewAccType] = useState('Standard Live');
   const [newAccLeverage, setNewAccLeverage] = useState('1:100');
 
-  const activeTradingAccount = tradingAccounts.find(a => a.id === selectedAccId) || tradingAccounts[0];
+  const activeTradingAccount = tradingAccounts.find(a => a.id === selectedAccId) || tradingAccounts[0] || {};
 
   // Perform Internal Transfer
   const handleInternalTransfer = async () => {

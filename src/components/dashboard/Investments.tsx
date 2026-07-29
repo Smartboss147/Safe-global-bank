@@ -77,7 +77,7 @@ export default function Investments({ user }: any) {
       const { data } = await supabase.from('trades').select('*').eq('user_id', user.id);
       if (data) {
         setOpenTrades(data.filter((t: any) => t.status === 'open'));
-        setTradeHistory(data.filter((t: any) => t.status === 'closed'));
+        setTradeHistory(data.filter((t: any) => t.status === 'closed' || t.status === 'completed'));
         setLoading(false);
       }
     };
@@ -134,7 +134,7 @@ export default function Investments({ user }: any) {
       
       
       await supabase.from('trades').update({
-        status: 'closed',
+        status: 'completed',
       }).eq('id', tradeId);
 
       

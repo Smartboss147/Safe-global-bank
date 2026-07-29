@@ -334,10 +334,11 @@ export const loadUserProfile = async (userId: string, userAuthData?: any) => {
 
   const localProfile = userId ? JSON.parse(localStorage.getItem(`local_profile_${userId}`) || '{}') : {};
 
+  // Database values should override local cached values, not the other way around.
   const combined = {
     ...(userAuthData || {}),
-    ...(profileFromDb || {}),
-    ...(localProfile || {})
+    ...(localProfile || {}),
+    ...(profileFromDb || {})
   };
 
   if (combined && (combined.country || combined.id)) {

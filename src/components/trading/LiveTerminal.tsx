@@ -77,7 +77,7 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch trades from Supabase + LocalStorage fallback
+  // Fetch trades from Supabase strictly
   const fetchTrades = async () => {
     if (!user) return;
     try {
@@ -87,14 +87,7 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      const localTrades = JSON.parse(localStorage.getItem(`local_trades_${user.id}`) || '[]');
-      
       let merged = data && Array.isArray(data) ? [...data] : [];
-      localTrades.forEach((lt: any) => {
-        if (!merged.find(m => m.id === lt.id)) {
-          merged.push(lt);
-        }
-      });
 
       merged.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
       setTrades(merged);
@@ -159,11 +152,6 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
       console.warn('Supabase trade insert notice:', err);
     }
 
-    // 2. Save locally for guaranteed instant rendering
-    const existingLocal = JSON.parse(localStorage.getItem(`local_trades_${user.id}`) || '[]');
-    existingLocal.unshift(newTradeObj);
-    localStorage.setItem(`local_trades_${user.id}`, JSON.stringify(existingLocal));
-
     setIsSubmitting(false);
     fetchTrades();
     alert(`Order Executed! ${type.toUpperCase()} ${lotSize} Lots ${activeMarket.symbol} @ $${orderPrice}`);
@@ -176,10 +164,6 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
       await supabase.from('trades').update({ status: 'completed' }).eq('id', tradeId);
     } catch (e) {}
 
-    const localTrades = JSON.parse(localStorage.getItem(`local_trades_${user.id}`) || '[]');
-    const updated = localTrades.map((t: any) => t.id === tradeId ? { ...t, status: 'completed' } : t);
-    localStorage.setItem(`local_trades_${user.id}`, JSON.stringify(updated));
-
     fetchTrades();
   };
 
@@ -191,10 +175,6 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
     try {
       await supabase.from('trades').update({ status: 'completed' }).in('id', openTradeIds);
     } catch (e) {}
-
-    const localTrades = JSON.parse(localStorage.getItem(`local_trades_${user.id}`) || '[]');
-    const updated = localTrades.map((t: any) => openTradeIds.includes(t.id) ? { ...t, status: 'completed' } : t);
-    localStorage.setItem(`local_trades_${user.id}`, JSON.stringify(updated));
 
     fetchTrades();
   };
