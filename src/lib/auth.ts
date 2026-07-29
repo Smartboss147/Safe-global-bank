@@ -8,4 +8,10 @@ export const signup = (email, password, data = {}) => supabase.auth.signUp({
     data
   }
 });
+export const loginWithGoogle = () => supabase.auth.signInWithOAuth({
+  provider: 'google',
+  options: {
+    redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined
+  }
+});
 export const logout = () => supabase.auth.signOut();
