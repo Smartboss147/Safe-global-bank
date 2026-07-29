@@ -172,6 +172,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     currency_code: assignedCurrencyCode,
     currency_symbol: assignedCurrencySymbol,
     pin,
+    transaction_pin: pin,
     role,
     status,
     kyc_status: kycStatus,

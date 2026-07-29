@@ -5,7 +5,54 @@
 -- Includes a backfill script for existing users and robust trigger logic.
 -- ==============================================================================
 
--- 1. DROP EXISTING TRIGGER AND FUNCTION (To ensure clean state)
+-- 1. ENSURE SCHEMA IS UP TO DATE (Add missing columns to profiles before anything else)
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS first_name TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS last_name TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS address TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS state TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zip TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS pin TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS transaction_pin TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS account_currency TEXT;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS currency_symbol TEXT;
+
+-- Ensure accounts has status
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+
+-- Ensure trading_accounts has all required fields
+ALTER TABLE public.trading_accounts ADD COLUMN IF NOT EXISTS account_number TEXT;
+ALTER TABLE public.trading_accounts ADD COLUMN IF NOT EXISTS equity DECIMAL(15, 2) DEFAULT 10000.00;
+ALTER TABLE public.trading_accounts ADD COLUMN IF NOT EXISTS margin DECIMAL(15, 2) DEFAULT 0.00;
+ALTER TABLE public.trading_accounts ADD COLUMN IF NOT EXISTS free_margin DECIMAL(15, 2) DEFAULT 10000.00;
+ALTER TABLE public.trading_accounts ADD COLUMN IF NOT EXISTS leverage TEXT DEFAULT '1:100';
+ALTER TABLE public.trading_accounts ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+
+-- Create kyc_documents if it doesn't exist
+CREATE TABLE IF NOT EXISTS public.kyc_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    document_type TEXT NOT NULL,
+    document_url TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    UNIQUE(user_id)
+);
+
+-- Ensure identity_verification exists
+CREATE TABLE IF NOT EXISTS public.identity_verification (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+    document_type TEXT NOT NULL,
+    document_url TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    UNIQUE(user_id)
+);
+
+-- 2. DROP EXISTING TRIGGER AND FUNCTION
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user();
 
@@ -52,7 +99,7 @@ BEGIN
     -- 2a. Insert or Update Profile
     INSERT INTO public.profiles (
         id, email, first_name, last_name, display_name, phone, address, 
-        city, state, zip, country, pin, kyc_status, role, account_currency, currency_symbol
+        city, state, zip, country, pin, transaction_pin, kyc_status, role, account_currency, currency_symbol
     )
     VALUES (
         new.id, 
@@ -66,6 +113,7 @@ BEGIN
         COALESCE(new.raw_user_meta_data->>'state', ''),
         COALESCE(new.raw_user_meta_data->>'zip', ''), 
         user_country,
+        COALESCE(new.raw_user_meta_data->>'pin', ''), 
         COALESCE(new.raw_user_meta_data->>'pin', ''), 
         'pending',
         user_role_val,
@@ -169,7 +217,7 @@ BEGIN
 
         -- Profile Backfill
         INSERT INTO public.profiles (
-            id, email, first_name, last_name, display_name, phone, country, pin, kyc_status, role, account_currency, currency_symbol
+            id, email, first_name, last_name, display_name, phone, country, pin, transaction_pin, kyc_status, role, account_currency, currency_symbol
         )
         VALUES (
             user_record.id, 
@@ -179,6 +227,7 @@ BEGIN
             user_display,
             COALESCE(user_record.raw_user_meta_data->>'phone', ''), 
             user_country,
+            COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
             COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
             'pending',
             COALESCE(user_record.raw_user_meta_data->>'role', 'user'),
