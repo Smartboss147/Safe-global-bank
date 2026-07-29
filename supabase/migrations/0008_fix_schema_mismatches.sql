@@ -8,7 +8,6 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS state TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zip TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS country TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS pin TEXT;
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS transaction_pin TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS account_currency TEXT;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS currency_symbol TEXT;
 

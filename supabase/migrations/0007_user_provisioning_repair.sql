@@ -52,7 +52,7 @@ BEGIN
     -- 2a. Insert or Update Profile
     INSERT INTO public.profiles (
         id, email, first_name, last_name, display_name, phone, address, 
-        city, state, zip, country, pin, transaction_pin, kyc_status, role, account_currency, currency_symbol
+        city, state, zip, country, pin, kyc_status, role, account_currency, currency_symbol
     )
     VALUES (
         new.id, 
@@ -66,7 +66,6 @@ BEGIN
         COALESCE(new.raw_user_meta_data->>'state', ''),
         COALESCE(new.raw_user_meta_data->>'zip', ''), 
         user_country,
-        COALESCE(new.raw_user_meta_data->>'pin', ''), 
         COALESCE(new.raw_user_meta_data->>'pin', ''), 
         'pending',
         user_role_val,
@@ -170,7 +169,7 @@ BEGIN
 
         -- Profile Backfill
         INSERT INTO public.profiles (
-            id, email, first_name, last_name, display_name, phone, country, pin, transaction_pin, kyc_status, role, account_currency, currency_symbol
+            id, email, first_name, last_name, display_name, phone, country, pin, kyc_status, role, account_currency, currency_symbol
         )
         VALUES (
             user_record.id, 
@@ -180,7 +179,6 @@ BEGIN
             user_display,
             COALESCE(user_record.raw_user_meta_data->>'phone', ''), 
             user_country,
-            COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
             COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
             'pending',
             COALESCE(user_record.raw_user_meta_data->>'role', 'user'),
