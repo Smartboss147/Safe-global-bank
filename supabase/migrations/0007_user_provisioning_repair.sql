@@ -68,7 +68,7 @@ BEGIN
         user_country,
         COALESCE(new.raw_user_meta_data->>'pin', ''), 
         COALESCE(new.raw_user_meta_data->>'pin', ''), 
-        'Unverified',
+        'pending',
         user_role_val,
         assigned_currency, 
         assigned_symbol
@@ -182,7 +182,7 @@ BEGIN
             user_country,
             COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
             COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
-            'Unverified',
+            'pending',
             COALESCE(user_record.raw_user_meta_data->>'role', 'user'),
             assigned_currency, 
             assigned_symbol

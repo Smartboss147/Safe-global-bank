@@ -713,9 +713,9 @@ export default function AdminDashboard({ user }: { user: any }) {
                           </td>
                           <td className="p-3.5">
                             <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                              u.kyc_status === 'verified' || u.kyc_status === 'Approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              u.kyc_status === 'approved' || u.kyc_status === 'verified' || u.kyc_status === 'Verified' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                             }`}>
-                              {u.kyc_status || 'verified'}
+                              {u.kyc_status || 'pending'}
                             </span>
                           </td>
                           <td className="p-3.5">
@@ -1467,14 +1467,13 @@ export default function AdminDashboard({ user }: { user: any }) {
                 <div>
                   <label className="block font-bold text-gray-400 uppercase mb-1">KYC Status</label>
                   <select 
-                    value={selectedUser.kyc_status || 'Unverified'}
+                    value={selectedUser.kyc_status || 'pending'}
                     onChange={(e) => setSelectedUser({ ...selectedUser, kyc_status: e.target.value })}
                     className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white"
                   >
-                    <option value="Unverified">Unverified</option>
-                    <option value="Pending">Pending Review</option>
-                    <option value="Verified">Verified</option>
-                    <option value="Rejected">Rejected</option>
+                    <option value="pending">Pending Review</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
                   </select>
                 </div>
               </div>

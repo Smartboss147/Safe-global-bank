@@ -148,7 +148,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   const pin = signupFields.pin || existingLocal.pin || '1234';
   const role = signupFields.role || existingLocal.role || (email.toLowerCase().includes('admin') ? 'admin' : 'user');
   const status = signupFields.status || existingLocal.status || 'active';
-  const kycStatus = signupFields.kyc_status || signupFields.kycStatus || existingLocal.kyc_status || 'Unverified';
+  const kycStatus = signupFields.kyc_status || signupFields.kycStatus || existingLocal.kyc_status || 'pending';
 
   // Automatically derive currency based on country
   const detectedCurrencyObj = getCurrencyByCountry(country);

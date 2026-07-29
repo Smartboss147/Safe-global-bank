@@ -33,14 +33,32 @@ export default function Investments({ user }: any) {
       const { data: querySnapshot } = await supabase.from('trading_accounts').select('*').eq('user_id', user.id);
       
       if (querySnapshot && querySnapshot.length > 0) {
-        setTradingAccount(querySnapshot[0]);
+        const acc = querySnapshot[0];
+        setTradingAccount({
+          ...acc,
+          freeMargin: acc.free_margin ?? acc.freeMargin ?? 10000.00,
+          equity: acc.equity ?? 10000.00,
+          margin: acc.margin ?? 0
+        });
       } else {
         const newAcc = {
           user_id: user.id,
           balance: 10000.00,
+          equity: 10000.00,
+          margin: 0.00,
+          free_margin: 10000.00,
+          leverage: '1:100',
+          status: 'Active'
         };
         const { data: docRef } = await supabase.from('trading_accounts').insert([newAcc]).select().single();
-        setTradingAccount({ ...docRef, equity: 10000.00, margin: 0, freeMargin: 10000.00 });
+        if (docRef) {
+          setTradingAccount({ 
+            ...docRef, 
+            equity: docRef.equity ?? 10000.00, 
+            margin: docRef.margin ?? 0, 
+            freeMargin: docRef.free_margin ?? 10000.00 
+          });
+        }
       }
     };
 
