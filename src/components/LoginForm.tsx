@@ -108,7 +108,12 @@ export default function LoginForm({ user }: { user?: any }) {
     setError('');
     setLoading(true);
     try {
-      const { data: userCredential, error: signupError } = await signup(signupData.email, signupData.password);
+      const { data: userCredential, error: signupError } = await signup(signupData.email, signupData.password, {
+        ...signupData,
+        first_name: signupData.firstName,
+        last_name: signupData.lastName,
+        display_name: signupData.username || `${signupData.firstName} ${signupData.lastName}`.trim()
+      });
       if (signupError) throw signupError;
       
       // Create initial account and profile record with complete signup information

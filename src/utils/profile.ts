@@ -172,6 +172,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     currency_code: assignedCurrencyCode,
     currency_symbol: assignedCurrencySymbol,
     pin,
+    transaction_pin: pin,
     role,
     status,
     kyc_status: kycStatus,
@@ -204,18 +205,16 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     console.warn('Supabase profiles upsert notice:', err);
   }
 
-  // 4. Ensure initial account in Supabase & local storage
-  const initialAccNum = signupFields.accountNumber || ('9424' + Math.floor(100000 + Math.random() * 900000));
-  const initialBalance = signupFields.balance !== undefined ? signupFields.balance : 0;
-  const initialAccType = signupFields.accountType || 'checking';
+  // 4. Ensure initial account in Supabase
+  const initialAccNum = signupFields.accountNumber || signupFields.account_number || ('9424' + Math.floor(100000 + Math.random() * 900000));
+  const initialBalance = signupFields.balance !== undefined ? signupFields.balance : 1000.00; // Default welcome balance
+  const initialAccType = signupFields.accountType || signupFields.account_type || 'checking';
 
   const accountRecord = {
     user_id: userId,
     account_number: initialAccNum,
     balance: initialBalance,
     currency: assignedCurrencyCode,
-    currency_code: assignedCurrencyCode,
-    currency_symbol: assignedCurrencySymbol,
     account_type: initialAccType,
     status: 'active'
   };
@@ -226,8 +225,86 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     console.warn('Supabase accounts upsert notice:', err);
   }
 
-  // 5. If role is admin, ensure entry in admins table
-  if (role === 'admin') {
+  // 5. Ensure wallets are created (main, trading, investment, bonus, profit)
+  const walletTypes = ['main', 'trading', 'investment', 'bonus', 'profit'];
+  try {
+    const walletInserts = walletTypes.map(type => ({
+      user_id: userId,
+      wallet_type: type,
+      balance: 0.00,
+      currency: assignedCurrencyCode
+    }));
+    await supabase.from('wallets').upsert(walletInserts, { onConflict: 'user_id,wallet_type' });
+  } catch (err) {
+    console.warn('Supabase wallets upsert notice:', err);
+  }
+
+  // 6. Ensure broker account
+  try {
+    await supabase.from('broker_accounts').upsert({
+      user_id: userId,
+      broker_name: 'Safe Global Prime',
+      tier: 'Standard',
+      status: 'active'
+    }, { onConflict: 'user_id' });
+  } catch (err) {
+    console.warn('Supabase broker_accounts upsert notice:', err);
+  }
+
+  // 7. Ensure trading statistics
+  try {
+    await supabase.from('trading_statistics').upsert({
+      user_id: userId,
+      total_trades: 0,
+      total_profit: 0.00
+    }, { onConflict: 'user_id' });
+  } catch (err) {
+    console.warn('Supabase trading_statistics upsert notice:', err);
+  }
+
+  // 8. Ensure trading account
+  try {
+    const trdAccNum = 'TRD-' + Math.floor(100000 + Math.random() * 900000);
+    await supabase.from('trading_accounts').upsert({
+      user_id: userId,
+      account_number: trdAccNum,
+      balance: 10000.00, // Demo/Start balance
+      equity: 10000.00,
+      margin: 0.00,
+      free_margin: 10000.00,
+      leverage: '1:100',
+      status: 'active'
+    }, { onConflict: 'user_id' });
+  } catch (err) {
+    console.warn('Supabase trading_accounts upsert notice:', err);
+  }
+
+  // 9. Ensure identity verification record
+  try {
+    await supabase.from('identity_verification').upsert({
+      user_id: userId,
+      document_type: 'National ID',
+      document_url: 'pending',
+      status: 'pending'
+    }, { onConflict: 'user_id' });
+  } catch (err) {
+    console.warn('Supabase identity_verification upsert notice:', err);
+  }
+
+  // 10. Ensure KYC documents entry
+  try {
+    await supabase.from('kyc_documents').upsert({
+      user_id: userId,
+      document_type: 'Identity Card',
+      document_url: 'pending',
+      status: 'pending'
+    }, { onConflict: 'user_id' });
+  } catch (err) {
+    console.warn('Supabase kyc_documents upsert notice:', err);
+  }
+
+  // 11. If role is admin, ensure entry in admins table
+  if (role === 'admin' || email.toLowerCase().includes('admin@safeglobal')) {
     try {
       await supabase.from('admins').upsert({ user_id: userId, email }, { onConflict: 'user_id' });
     } catch (e) {

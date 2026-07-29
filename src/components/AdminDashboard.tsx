@@ -1451,10 +1451,59 @@ export default function AdminDashboard({ user }: { user: any }) {
                 </select>
               </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-gray-400 uppercase mb-1">Account Status</label>
+                  <select 
+                    value={selectedUser.status || 'active'}
+                    onChange={(e) => setSelectedUser({ ...selectedUser, status: e.target.value })}
+                    className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white"
+                  >
+                    <option value="active">Active</option>
+                    <option value="suspended">Suspended</option>
+                    <option value="pending">Pending</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-400 uppercase mb-1">KYC Status</label>
+                  <select 
+                    value={selectedUser.kyc_status || 'Unverified'}
+                    onChange={(e) => setSelectedUser({ ...selectedUser, kyc_status: e.target.value })}
+                    className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white"
+                  >
+                    <option value="Unverified">Unverified</option>
+                    <option value="Pending">Pending Review</option>
+                    <option value="Verified">Verified</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-400 uppercase mb-1">Transaction PIN</label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={selectedUser.pin || '1234'} 
+                    onChange={(e) => setSelectedUser({ ...selectedUser, pin: e.target.value.replace(/\D/g, '').substring(0, 4) })}
+                    className="flex-1 p-3 bg-[#181a22] border border-white/10 rounded-xl font-mono text-white" 
+                  />
+                  <button 
+                    onClick={() => setSelectedUser({ ...selectedUser, pin: Math.floor(1000 + Math.random() * 9000).toString() })}
+                    className="px-3 bg-white/5 hover:bg-white/10 rounded-xl transition text-[10px] font-bold"
+                  >
+                    Regen
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
                   onClick={() => {
                     handleUserStatusUpdate(selectedUser.id, 'role', selectedUser.role, 'ROLE_UPDATED');
+                    handleUserStatusUpdate(selectedUser.id, 'status', selectedUser.status, 'STATUS_UPDATED');
+                    handleUserStatusUpdate(selectedUser.id, 'kyc_status', selectedUser.kyc_status, 'KYC_UPDATED');
+                    handleUserStatusUpdate(selectedUser.id, 'pin', selectedUser.pin, 'PIN_UPDATED');
                     setIsEditModalOpen(false);
                   }}
                   className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition"

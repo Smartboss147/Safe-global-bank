@@ -52,7 +52,7 @@ BEGIN
     -- 2a. Insert or Update Profile
     INSERT INTO public.profiles (
         id, email, first_name, last_name, display_name, phone, address, 
-        city, state, zip, country, pin, kyc_status, role, account_currency, currency_symbol
+        city, state, zip, country, pin, transaction_pin, kyc_status, role, account_currency, currency_symbol
     )
     VALUES (
         new.id, 
@@ -66,6 +66,7 @@ BEGIN
         COALESCE(new.raw_user_meta_data->>'state', ''),
         COALESCE(new.raw_user_meta_data->>'zip', ''), 
         user_country,
+        COALESCE(new.raw_user_meta_data->>'pin', ''), 
         COALESCE(new.raw_user_meta_data->>'pin', ''), 
         'Unverified',
         user_role_val,
@@ -109,7 +110,12 @@ BEGIN
     VALUES (new.id, 'TRD-' || LPAD(FLOOR(RANDOM() * 1000000)::text, 6, '0'), 10000.00, 10000.00, 0.00, 10000.00, '1:100', 'Active')
     ON CONFLICT DO NOTHING;
 
-    -- 2g. Handle Admin status automatically
+    -- 2g. Create identity verification record
+    INSERT INTO public.identity_verification (user_id, document_type, document_url, status)
+    VALUES (new.id, 'National ID', 'pending', 'pending')
+    ON CONFLICT (user_id) DO NOTHING;
+
+    -- 2h. Handle Admin status automatically
     IF new.email = 'admin@safeglobal.com' OR new.email = 'admin@safeglobalbank.com' THEN
         INSERT INTO public.admins (user_id) VALUES (new.id) ON CONFLICT DO NOTHING;
         UPDATE public.profiles SET role = 'admin' WHERE id = new.id;
@@ -164,7 +170,7 @@ BEGIN
 
         -- Profile Backfill
         INSERT INTO public.profiles (
-            id, email, first_name, last_name, display_name, phone, country, kyc_status, role, account_currency, currency_symbol
+            id, email, first_name, last_name, display_name, phone, country, pin, transaction_pin, kyc_status, role, account_currency, currency_symbol
         )
         VALUES (
             user_record.id, 
@@ -174,6 +180,8 @@ BEGIN
             user_display,
             COALESCE(user_record.raw_user_meta_data->>'phone', ''), 
             user_country,
+            COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
+            COALESCE(user_record.raw_user_meta_data->>'pin', ''), 
             'Unverified',
             COALESCE(user_record.raw_user_meta_data->>'role', 'user'),
             assigned_currency, 
@@ -215,6 +223,11 @@ BEGIN
             INSERT INTO public.trading_accounts (user_id, account_number, balance, equity, margin, free_margin, leverage, status)
             VALUES (user_record.id, 'TRD-' || LPAD(FLOOR(RANDOM() * 1000000)::text, 6, '0'), 10000.00, 10000.00, 0.00, 10000.00, '1:100', 'Active');
         END IF;
+        
+        -- Identity Verification Backfill
+        INSERT INTO public.identity_verification (user_id, document_type, document_url, status)
+        VALUES (user_record.id, 'National ID', 'pending', 'pending')
+        ON CONFLICT (user_id) DO NOTHING;
 
         -- Admin Backfill
         IF user_record.email = 'admin@safeglobal.com' OR user_record.email = 'admin@safeglobalbank.com' THEN
