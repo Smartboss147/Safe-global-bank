@@ -274,7 +274,14 @@ export default function AdminDashboard({ user }: { user: any }) {
   const handleUserStatusUpdate = async (userId: string, statusField: string, statusValue: any, actionName: string) => {
     try {
       const fieldToUpdate = statusField === 'kycStatus' ? 'kyc_status' : statusField;
-      await supabase.from('profiles').update({ [fieldToUpdate]: statusValue }).eq('id', userId);
+      const updates: any = { [fieldToUpdate]: statusValue };
+      
+      // Keep transaction_pin in sync with pin if pin is updated
+      if (statusField === 'pin') {
+        updates.transaction_pin = statusValue;
+      }
+
+      await supabase.from('profiles').update(updates).eq('id', userId);
 
       await logAuditAction(actionName, userId, `Updated ${statusField} to ${statusValue}`);
       setMsg({ type: 'success', text: `User ${actionName.toLowerCase().replace(/_/g, ' ')} successfully.` });
@@ -1433,10 +1440,41 @@ export default function AdminDashboard({ user }: { user: any }) {
               <button onClick={() => setIsEditModalOpen(false)} className="text-gray-400 hover:text-white font-bold">✕</button>
             </div>
 
-            <div className="space-y-4 text-xs">
+            <div className="space-y-4 text-xs max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
               <div>
                 <label className="block font-bold text-gray-400 uppercase mb-1">User Email</label>
                 <input type="text" disabled value={selectedUser.email || ''} className="w-full p-3 bg-[#181a22] rounded-xl text-gray-300 font-mono" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block font-bold text-gray-400 uppercase mb-1">First Name</label>
+                  <input 
+                    type="text" 
+                    value={selectedUser.firstName || ''} 
+                    onChange={(e) => setSelectedUser({ ...selectedUser, firstName: e.target.value })}
+                    className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white" 
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-gray-400 uppercase mb-1">Last Name</label>
+                  <input 
+                    type="text" 
+                    value={selectedUser.lastName || ''} 
+                    onChange={(e) => setSelectedUser({ ...selectedUser, lastName: e.target.value })}
+                    className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white" 
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-400 uppercase mb-1">Display Name</label>
+                <input 
+                  type="text" 
+                  value={selectedUser.displayName || ''} 
+                  onChange={(e) => setSelectedUser({ ...selectedUser, displayName: e.target.value })}
+                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white" 
+                />
               </div>
 
               <div>
@@ -1503,6 +1541,9 @@ export default function AdminDashboard({ user }: { user: any }) {
                     handleUserStatusUpdate(selectedUser.id, 'status', selectedUser.status, 'STATUS_UPDATED');
                     handleUserStatusUpdate(selectedUser.id, 'kyc_status', selectedUser.kyc_status, 'KYC_UPDATED');
                     handleUserStatusUpdate(selectedUser.id, 'pin', selectedUser.pin, 'PIN_UPDATED');
+                    handleUserStatusUpdate(selectedUser.id, 'first_name', selectedUser.firstName, 'PROFILE_UPDATED');
+                    handleUserStatusUpdate(selectedUser.id, 'last_name', selectedUser.lastName, 'PROFILE_UPDATED');
+                    handleUserStatusUpdate(selectedUser.id, 'display_name', selectedUser.displayName, 'PROFILE_UPDATED');
                     setIsEditModalOpen(false);
                   }}
                   className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition"
