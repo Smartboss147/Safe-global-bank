@@ -23,10 +23,12 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
   const [selectedAccId, setSelectedAccId] = useState('');
   
   useEffect(() => {
+    if (!user?.id) return;
+
     const fetchTradingAccounts = async () => {
-      if (!user) return;
       const { data } = await supabase.from('trading_accounts').select('*').eq('user_id', user.id);
       if (data && data.length > 0) {
+        console.log('[ClientPortalWallet] Fresh trading accounts from Supabase:', data);
         const mapped = data.map(d => ({
           id: d.id,
           number: d.account_number,
@@ -41,8 +43,20 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
         setSelectedAccId(mapped[0].id);
       }
     };
+
     fetchTradingAccounts();
-  }, [user, currInfo.code]);
+
+    const tradingChannel = supabase.channel(`trading_acc_realtime_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_accounts', filter: `user_id=eq.${user.id}` }, payload => {
+        console.log('[ClientPortalWallet Realtime] Database change event:', payload);
+        fetchTradingAccounts();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(tradingChannel);
+    };
+  }, [user?.id, currInfo.code]);
 
   const [showNewAccModal, setShowNewAccModal] = useState(false);
   const [newAccType, setNewAccType] = useState('Standard Live');
@@ -73,6 +87,11 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
           await supabase.from('accounts').update({ balance: updatedBankBal }).eq('id', account.id);
         }
 
+        const newTrdBal = (activeTradingAccount.balance || 0) + val;
+        if (activeTradingAccount.id && !activeTradingAccount.id.startsWith('acc_')) {
+          await supabase.from('trading_accounts').update({ balance: newTrdBal, equity: newTrdBal }).eq('id', activeTradingAccount.id);
+        }
+
         setTradingAccounts(prev =>
           prev.map(a => a.id === selectedAccId ? { ...a, balance: a.balance + val, equity: a.equity + val } : a)
         );
@@ -89,6 +108,11 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
         const updatedBankBal = (account?.balance || 0) + val;
         if (account?.id) {
           await supabase.from('accounts').update({ balance: updatedBankBal }).eq('id', account.id);
+        }
+
+        const newTrdBal = (activeTradingAccount.balance || 0) - val;
+        if (activeTradingAccount.id && !activeTradingAccount.id.startsWith('acc_')) {
+          await supabase.from('trading_accounts').update({ balance: newTrdBal, equity: newTrdBal }).eq('id', activeTradingAccount.id);
         }
 
         setTradingAccounts(prev =>
@@ -108,22 +132,42 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
     }
   };
 
-  const handleCreateNewAccount = () => {
-    const newAcc = {
-      id: 'acc_' + Math.random().toString(36).substring(2, 7),
-      number: `SGT-${Math.floor(100000 + Math.random() * 900000)}-${newAccType.includes('Demo') ? 'DEMO' : 'LIVE'}`,
-      type: newAccType,
-      currency: currInfo.code,
-      leverage: newAccLeverage,
-      balance: newAccType.includes('Demo') ? 100000 : 0,
-      equity: newAccType.includes('Demo') ? 100000 : 0,
-      isLive: !newAccType.includes('Demo')
-    };
+  const handleCreateNewAccount = async () => {
+    const accNum = `SGT-${Math.floor(100000 + Math.random() * 900000)}-${newAccType.includes('Demo') ? 'DEMO' : 'LIVE'}`;
+    const initBal = newAccType.includes('Demo') ? 100000 : 0;
 
-    setTradingAccounts(prev => [...prev, newAcc]);
-    setSelectedAccId(newAcc.id);
+    try {
+      const { data: inserted } = await supabase.from('trading_accounts').insert([{
+        user_id: user.id,
+        account_number: accNum,
+        balance: initBal,
+        equity: initBal,
+        margin: 0,
+        free_margin: initBal,
+        leverage: newAccLeverage,
+        status: 'active'
+      }]).select().single();
+
+      if (inserted) {
+        const mapped = {
+          id: inserted.id,
+          number: inserted.account_number,
+          type: newAccType,
+          currency: currInfo.code,
+          leverage: inserted.leverage,
+          balance: inserted.balance,
+          equity: inserted.equity,
+          isLive: !newAccType.includes('Demo')
+        };
+        setTradingAccounts(prev => [...prev, mapped]);
+        setSelectedAccId(inserted.id);
+      }
+    } catch (err) {
+      console.error('[ClientPortalWallet] Error inserting trading account:', err);
+    }
+
     setShowNewAccModal(false);
-    alert(`New Trading Account ${newAcc.number} created successfully!`);
+    alert(`New Trading Account ${accNum} created successfully!`);
   };
 
   const downloadPDFStatement = () => {

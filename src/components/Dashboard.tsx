@@ -85,21 +85,74 @@ export default function Dashboard({ user }: { user: any }) {
   const fetchAccount = async () => {
     if (!user) return;
     
-    // Fetch account
+    // Fetch fresh account directly from Supabase
     const { data: accData } = await supabase.from('accounts').select('*').eq('user_id', user.id);
     if (accData && accData.length > 0) {
+      console.log('[Dashboard] Fresh account data from Supabase:', accData[0]);
       setAccountId(accData[0].id);
       setAccount(accData[0]);
     }
     
-    // Fetch user profile info with local override fallback
+    // Fetch fresh user profile info directly from Supabase
     const profile = await loadUserProfile(user.id, user);
+    console.log('[Dashboard] Fresh profile data from Supabase:', profile);
     setUserData(profile);
   };
 
   useEffect(() => {
+    if (!user?.id) return;
+
     fetchAccount();
-  }, [user]);
+
+    console.log(`[Dashboard] Initializing Supabase Realtime subscriptions for user ${user.id}...`);
+
+    // 1. Account channel subscription (Balance, status, currency, account type updates)
+    const accChannel = supabase.channel(`dashboard_acc_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts', filter: `user_id=eq.${user.id}` }, payload => {
+        console.log('[Dashboard Realtime] Account table update received:', payload);
+        fetchAccount();
+      })
+      .subscribe();
+
+    // 2. Profile channel subscription (KYC status, account status, user details updates)
+    const profileChannel = supabase.channel(`dashboard_prof_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` }, payload => {
+        console.log('[Dashboard Realtime] Profile table update received:', payload);
+        fetchAccount();
+      })
+      .subscribe();
+
+    // 3. Wallets channel subscription
+    const walletChannel = supabase.channel(`dashboard_wallets_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` }, payload => {
+        console.log('[Dashboard Realtime] Wallets table update received:', payload);
+        fetchAccount();
+      })
+      .subscribe();
+
+    // 4. KYC Documents channel subscription
+    const kycChannel = supabase.channel(`dashboard_kyc_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_documents', filter: `user_id=eq.${user.id}` }, payload => {
+        console.log('[Dashboard Realtime] KYC Documents table update received:', payload);
+        fetchAccount();
+      })
+      .subscribe();
+
+    // 5. Window event listener for user updates
+    const handleSyncEvent = () => {
+      console.log('[Dashboard] Window event user_registered_or_updated received, refetching...');
+      fetchAccount();
+    };
+    window.addEventListener('user_registered_or_updated', handleSyncEvent);
+
+    return () => {
+      supabase.removeChannel(accChannel);
+      supabase.removeChannel(profileChannel);
+      supabase.removeChannel(walletChannel);
+      supabase.removeChannel(kycChannel);
+      window.removeEventListener('user_registered_or_updated', handleSyncEvent);
+    };
+  }, [user?.id]);
 
   const greeting = () => {
     const hour = currentTime.getHours();

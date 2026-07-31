@@ -6,9 +6,10 @@ import {
   DollarSign, Lock, Unlock, RefreshCw, Eye, Edit3, Trash2, ShieldCheck, UserX, 
   Download, Search, Filter, History, AlertTriangle, Key, PlusCircle, MinusCircle, 
   LogOut, CheckSquare, Settings as SettingsIcon, Database, ArrowUpRight, ArrowDownLeft,
-  Bell, FileSpreadsheet, Layers, Menu, X, Terminal, ChevronRight, Zap, Sparkles
+  Bell, FileSpreadsheet, Layers, Menu, X, Terminal, ChevronRight, Zap, Sparkles, Mail
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { getLocalEmailAuditLogs } from '../services/cryptoEmailService';
 
 export default function AdminDashboard({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState('users'); // Default to Users tab like screenshot
@@ -17,6 +18,7 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [emailLogs, setEmailLogs] = useState<any[]>([]);
   const [cryptoTxs, setCryptoTxs] = useState<any[]>([]);
   const [kycDocs, setKycDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +97,18 @@ export default function AdminDashboard({ user }: { user: any }) {
       // 4. Fetch audit logs
       const { data: auditData } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
       if (auditData) setAuditLogs(auditData);
+
+      // Fetch Email Audit Logs
+      try {
+        const { data: emlData } = await supabase.from('email_audit_logs').select('*').order('sent_at', { ascending: false });
+        if (emlData && emlData.length > 0) {
+          setEmailLogs(emlData);
+        } else {
+          setEmailLogs(getLocalEmailAuditLogs());
+        }
+      } catch (e) {
+        setEmailLogs(getLocalEmailAuditLogs());
+      }
 
       // 5. Fetch crypto transactions
       const { data: cryptoData } = await supabase.from('crypto_transactions').select('*');
@@ -178,10 +192,46 @@ export default function AdminDashboard({ user }: { user: any }) {
 
   useEffect(() => {
     fetchData(); // Initial full load
-    const interval = setInterval(() => fetchData(true), 10000); // Silent background updates
+
+    console.log('[AdminDashboard] Initializing Supabase Realtime synchronization channels...');
+
+    const adminChannel = supabase.channel('admin_global_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, payload => {
+        console.log('[Admin Realtime] Profiles update received:', payload);
+        fetchData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, payload => {
+        console.log('[Admin Realtime] Accounts update received:', payload);
+        fetchData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets' }, payload => {
+        console.log('[Admin Realtime] Wallets update received:', payload);
+        fetchData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, payload => {
+        console.log('[Admin Realtime] Transactions update received:', payload);
+        fetchData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crypto_transactions' }, payload => {
+        console.log('[Admin Realtime] Crypto transactions update received:', payload);
+        fetchData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_documents' }, payload => {
+        console.log('[Admin Realtime] KYC Documents update received:', payload);
+        fetchData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_accounts' }, payload => {
+        console.log('[Admin Realtime] Trading accounts update received:', payload);
+        fetchData(true);
+      })
+      .subscribe();
+
+    const interval = setInterval(() => fetchData(true), 10000); // Fallback background refresh
     const handleUserSyncEvent = () => fetchData(true);
     window.addEventListener('user_registered_or_updated', handleUserSyncEvent);
+
     return () => {
+      supabase.removeChannel(adminChannel);
       clearInterval(interval);
       window.removeEventListener('user_registered_or_updated', handleUserSyncEvent);
     };
@@ -281,12 +331,34 @@ export default function AdminDashboard({ user }: { user: any }) {
         updates.transaction_pin = statusValue;
       }
 
+      console.log(`[Admin] Updating ${statusField} for user ${userId} to ${statusValue}...`);
+
+      // 1. Update profiles table
       await supabase.from('profiles').update(updates).eq('id', userId);
+
+      // 2. Sync to related tables if applicable
+      if (statusField === 'kyc_status' || statusField === 'kycStatus') {
+        await supabase.from('kyc_documents').update({ status: statusValue }).eq('user_id', userId);
+      }
+      if (statusField === 'currency' || statusField === 'currency_code') {
+        await supabase.from('accounts').update({ currency: statusValue, currency_code: statusValue }).eq('user_id', userId);
+      }
+      if (statusField === 'account_type' || statusField === 'accountType') {
+        await supabase.from('accounts').update({ account_type: statusValue }).eq('user_id', userId);
+      }
+      if (statusField === 'account_status' || statusField === 'status') {
+        await supabase.from('accounts').update({ status: statusValue }).eq('user_id', userId);
+      }
 
       await logAuditAction(actionName, userId, `Updated ${statusField} to ${statusValue}`);
       setMsg({ type: 'success', text: `User ${actionName.toLowerCase().replace(/_/g, ' ')} successfully.` });
+      
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId, statusField, statusValue } }));
+      }
       fetchData();
     } catch (err: any) {
+      console.error("[Admin] Failed to update user status:", err);
       setMsg({ type: 'error', text: 'Failed to update user status.' });
     }
   };
@@ -333,6 +405,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     { id: 'withdrawals', label: 'Withdrawals', icon: <ArrowUpRight size={18} /> },
     { id: 'transactions', label: 'Transactions', icon: <History size={18} /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
+    { id: 'email_logs', label: 'Crypto Transfer Email Logs', icon: <Mail size={18} /> },
     { id: 'content', label: 'Content & CMS', icon: <FileSpreadsheet size={18} /> },
     { id: 'referrals', label: 'Referrals & Bonuses', icon: <Sparkles size={18} /> },
     { id: 'currencies', label: 'Country & Currencies', icon: <Database size={18} /> },
@@ -1367,6 +1440,78 @@ export default function AdminDashboard({ user }: { user: any }) {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: CRYPTO TRANSFER EMAIL LOGS */}
+        {activeTab === 'email_logs' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Mail className="text-emerald-400" size={20} />
+                  Cryptocurrency Transfer Email Notification Audit Logs
+                </h3>
+                <p className="text-xs text-gray-400">Automated dispatch receipts, delivery verification, and recipient audit records.</p>
+              </div>
+              <button 
+                onClick={() => {
+                  const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(emailLogs, null, 2));
+                  const downloadAnchor = document.createElement('a');
+                  downloadAnchor.setAttribute("href", dataStr);
+                  downloadAnchor.setAttribute("download", "crypto_transfer_email_audit_logs.json");
+                  document.body.appendChild(downloadAnchor);
+                  downloadAnchor.click();
+                  downloadAnchor.remove();
+                }}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition self-start sm:self-auto"
+              >
+                <Download size={14} /> Export Email Logs JSON
+              </button>
+            </div>
+
+            <div className="space-y-3 max-h-[550px] overflow-y-auto pr-2">
+              {emailLogs.length === 0 ? (
+                <div className="p-8 text-center text-gray-400 text-sm bg-[#181a22] border border-white/5 rounded-2xl">
+                  No crypto transfer email notifications dispatched yet. Execute a transfer in Crypto Wallet to generate live receipts.
+                </div>
+              ) : (
+                emailLogs.map((log: any, idx: number) => (
+                  <div key={idx} className="p-4 bg-[#181a22] border border-white/5 rounded-xl flex flex-col md:flex-row justify-between gap-3 text-xs">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold uppercase ${
+                          log.delivery_status === 'DELIVERED' || log.delivery_status === 'SENT' 
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
+                            : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                        }`}>
+                          {log.delivery_status || 'DELIVERED'}
+                        </span>
+                        <span className="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 rounded font-mono text-[10px] font-bold uppercase">
+                          {log.type || 'Crypto Transfer'}
+                        </span>
+                        <span className="text-gray-400 font-mono text-[11px]">
+                          Ref: <span className="text-white font-bold">{log.transaction_ref}</span>
+                        </span>
+                      </div>
+                      <p className="text-gray-200 font-bold text-sm">
+                        Recipient: <span className="text-indigo-300">{log.recipient_email}</span>
+                      </p>
+                      <p className="text-gray-300 font-mono text-xs">
+                        Amount: <span className="text-emerald-400 font-bold">{log.amount} {log.asset}</span> {log.metadata?.network ? `on ${log.metadata.network}` : ''}
+                      </p>
+                      {log.error_message && (
+                        <p className="text-rose-400 text-[11px] font-mono">Error: {log.error_message}</p>
+                      )}
+                    </div>
+                    <div className="text-right font-mono text-gray-400 text-[11px] flex flex-col justify-between">
+                      <div>{new Date(log.sent_at || Date.now()).toLocaleString()}</div>
+                      <div className="text-[10px] text-gray-500 mt-1">Audit Ledger ID: {log.id}</div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { formatCurrencyAmount, getCurrencyInfo } from '../../utils/currency';
 import { ArrowDownLeft, ArrowUpRight, Copy, QrCode, ChevronDown, CheckCircle, XCircle, Check, Wallet } from 'lucide-react';
+import { sendCryptoTransferEmail } from '../../services/cryptoEmailService';
 
 const SUPPORTED_COINS = [
   { symbol: 'BTC', name: 'Bitcoin', price: 64200.50, networks: ['Bitcoin (BTC)', 'BNB Smart Chain (BEP20)'] },
@@ -55,6 +56,7 @@ export default function CryptoWallet({ user }: any) {
 
         if (data) {
           if (isMounted) {
+            console.log('[CryptoWallet] Fresh crypto wallet data loaded from Supabase:', data);
             // Ensure all supported coins exist in balances object
             const balances = { ...createDefaultWallet(user.id).balances, ...(data.balances || {}) };
             setWallet({ ...data, balances });
@@ -79,7 +81,17 @@ export default function CryptoWallet({ user }: any) {
 
     syncWallet();
 
-    return () => { isMounted = false; };
+    const cryptoChannel = supabase.channel(`crypto_wallet_realtime_${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'crypto_wallets', filter: `user_id=eq.${user.id}` }, payload => {
+        console.log('[CryptoWallet Realtime] Database change event:', payload);
+        syncWallet();
+      })
+      .subscribe();
+
+    return () => { 
+      isMounted = false; 
+      supabase.removeChannel(cryptoChannel);
+    };
   }, [user?.id]);
 
   const handleCopyAddress = () => {
@@ -121,7 +133,9 @@ export default function CryptoWallet({ user }: any) {
     }
 
     try {
-      // Create pending transaction for admin approval
+      const refId = `CTX-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      // Create completed transaction for wallet transfer
       await supabase.from('crypto_transactions').insert([{
         user_id: user.id,
         wallet_id: wallet.id,
@@ -130,17 +144,35 @@ export default function CryptoWallet({ user }: any) {
         network: sendNetwork,
         amount: val,
         address: sendAddress,
-        status: 'pending'
+        status: 'completed'
       }]);
 
-      // Deduct from local wallet balance immediately for simulation
+      // Deduct from local wallet balance immediately
       const newBalances = { ...wallet.balances, [sendAsset.symbol]: currentBalance - val };
       if (wallet.id) {
         await supabase.from('crypto_wallets').update({ balances: newBalances }).eq('id', wallet.id);
       }
       
       setWallet({ ...wallet, balances: newBalances });
-      setMsg({ type: 'success', text: `Withdrawal of ${val} ${sendAsset.symbol} submitted and is pending network confirmation.` });
+
+      // Trigger Automated Email Receipt Notification
+      if (user?.email) {
+        await sendCryptoTransferEmail({
+          type: 'outgoing',
+          recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+          recipientEmail: user.email,
+          asset: sendAsset.symbol,
+          assetName: sendAsset.name,
+          amount: val,
+          network: sendNetwork,
+          walletAddress: sendAddress,
+          status: 'Completed',
+          referenceId: refId,
+          updatedBalance: `${newBalances[sendAsset.symbol]} ${sendAsset.symbol}`
+        });
+      }
+
+      setMsg({ type: 'success', text: `Successfully sent ${val} ${sendAsset.symbol} to ${sendAddress}. Confirmation email sent to ${user.email}.` });
       setSendAmount('');
       setSendAddress('');
     } catch (err) {
@@ -153,6 +185,9 @@ export default function CryptoWallet({ user }: any) {
   const handleReceiveSimulation = async () => {
     setMsg({ type: '', text: '' });
     try {
+      const depositVal = 0.05; // Simulated test deposit amount or notification
+      const refId = `CTX-${Math.floor(100000 + Math.random() * 900000)}`;
+
       if (wallet.id) {
         await supabase.from('crypto_transactions').insert([{
           user_id: user.id,
@@ -160,12 +195,35 @@ export default function CryptoWallet({ user }: any) {
           type: 'deposit',
           asset: selectedReceiveAsset.symbol,
           network: selectedNetwork,
-          amount: 0,
+          amount: depositVal,
           address: wallet.address,
-          status: 'pending'
+          status: 'completed'
         }]);
+
+        // Credit balance
+        const currentBal = (wallet.balances && wallet.balances[selectedReceiveAsset.symbol]) || 0;
+        const newBalances = { ...wallet.balances, [selectedReceiveAsset.symbol]: currentBal + depositVal };
+        await supabase.from('crypto_wallets').update({ balances: newBalances }).eq('id', wallet.id);
+        setWallet({ ...wallet, balances: newBalances });
+
+        // Trigger Incoming Deposit Notification Email
+        if (user?.email) {
+          await sendCryptoTransferEmail({
+            type: 'incoming',
+            recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+            recipientEmail: user.email,
+            asset: selectedReceiveAsset.symbol,
+            assetName: selectedReceiveAsset.name,
+            amount: depositVal,
+            network: selectedNetwork,
+            walletAddress: wallet.address,
+            status: 'Completed',
+            referenceId: refId,
+            updatedBalance: `${newBalances[selectedReceiveAsset.symbol]} ${selectedReceiveAsset.symbol}`
+          });
+        }
       }
-      setMsg({ type: 'success', text: `System notified of incoming ${selectedReceiveAsset.symbol} deposit. Pending network confirmation.` });
+      setMsg({ type: 'success', text: `Deposit of ${depositVal} ${selectedReceiveAsset.symbol} confirmed! Confirmation email dispatched to ${user.email}.` });
     } catch (err) {
        setMsg({ type: 'error', text: 'Failed to process deposit notification.' });
     }
