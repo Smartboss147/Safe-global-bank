@@ -2,6 +2,28 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { formatCurrencyAmount, getCurrencyInfo } from '../../utils/currency';
 import { TrendingUp, TrendingDown, Clock, Activity, BarChart2 } from 'lucide-react';
+import { 
+  AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine 
+} from 'recharts';
+
+function generateAssetChartData(basePrice: number, count = 20) {
+  const points = [];
+  const now = new Date();
+  let current = basePrice * 0.985;
+  for (let i = count; i >= 0; i--) {
+    const timeStr = new Date(now.getTime() - i * 15 * 60 * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const delta = (Math.random() - 0.48) * (basePrice * 0.003);
+    current = Math.max(0.0001, current + delta);
+    points.push({
+      time: timeStr,
+      price: Number(current.toFixed(basePrice > 100 ? 2 : 4))
+    });
+  }
+  if (points.length > 0) {
+    points[points.length - 1].price = basePrice;
+  }
+  return points;
+}
 
 const MARKETS = [
   { symbol: 'EURUSD', name: 'EUR/USD', type: 'Forex', price: 1.0934, change: 0.12 },
@@ -23,6 +45,30 @@ export default function Investments({ user }: any) {
   const [loading, setLoading] = useState(true);
   const [placingTrade, setPlacingTrade] = useState(false);
   const [activeTab, setActiveTab] = useState<'trade' | 'history'>('trade');
+
+  // Recharts Chart State
+  const [chartData, setChartData] = useState<any[]>([]);
+  const [timeframe, setTimeframe] = useState('4H');
+  const [chartType, setChartType] = useState<'area' | 'line'>('area');
+
+  useEffect(() => {
+    setChartData(generateAssetChartData(selectedAsset.price, 20));
+  }, [selectedAsset.symbol, timeframe]);
+
+  // Real-time price movement chart simulation
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setChartData(prev => {
+        if (!prev || prev.length === 0) return prev;
+        const last = prev[prev.length - 1];
+        const delta = (Math.random() - 0.49) * (selectedAsset.price * 0.002);
+        const newPrice = Number(Math.max(0.0001, last.price + delta).toFixed(selectedAsset.price > 100 ? 2 : 4));
+        const newTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return [...prev.slice(1), { time: newTime, price: newPrice }];
+      });
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [selectedAsset.price]);
 
   useEffect(() => {
     if (!user) return;
@@ -302,23 +348,84 @@ export default function Investments({ user }: any) {
 
         {/* Right Column: Chart & Open Trades */}
         <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[300px]">
-            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[340px]">
+            <div className="p-4 border-b border-gray-100 flex flex-wrap justify-between items-center gap-2 bg-gray-50/50">
                <div className="flex items-center gap-2">
                  <Activity size={18} className="text-blue-600" />
-                 <h3 className="font-bold text-gray-900">{selectedAsset.symbol} Chart</h3>
+                 <div>
+                   <h3 className="font-bold text-gray-900">{selectedAsset.symbol} ({selectedAsset.name})</h3>
+                   <p className="text-xs text-gray-500 font-mono">${selectedAsset.price} ({selectedAsset.change >= 0 ? '+' : ''}{selectedAsset.change}%)</p>
+                 </div>
                </div>
-               <div className="flex gap-2">
-                 <span className="px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-gray-600">1H</span>
-                 <span className="px-2 py-1 bg-blue-100 border border-blue-200 rounded text-xs font-bold text-blue-700">4H</span>
-                 <span className="px-2 py-1 bg-white border border-gray-200 rounded text-xs font-bold text-gray-600">1D</span>
+               <div className="flex gap-1 items-center">
+                 <div className="flex gap-1 bg-white p-1 rounded-lg border border-gray-200 text-xs font-bold">
+                   {['1H', '4H', '1D', '1W'].map(tf => (
+                     <button
+                       key={tf}
+                       onClick={() => setTimeframe(tf)}
+                       className={`px-2 py-0.5 rounded transition ${timeframe === tf ? 'bg-blue-600 text-white' : 'text-gray-600 hover:text-gray-900'}`}
+                     >
+                       {tf}
+                     </button>
+                   ))}
+                 </div>
+                 <div className="flex gap-1 bg-white p-1 rounded-lg border border-gray-200 text-xs font-bold">
+                   <button
+                     onClick={() => setChartType('area')}
+                     className={`px-2 py-0.5 rounded transition ${chartType === 'area' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}
+                   >
+                     Area
+                   </button>
+                   <button
+                     onClick={() => setChartType('line')}
+                     className={`px-2 py-0.5 rounded transition ${chartType === 'line' ? 'bg-blue-100 text-blue-700' : 'text-gray-500'}`}
+                   >
+                     Line
+                   </button>
+                 </div>
                </div>
             </div>
-            <div className="flex-1 bg-slate-900 flex items-center justify-center relative p-6">
-               {/* Simulating a chart with CSS */}
-               <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
-               <BarChart2 size={64} className="text-slate-700 relative z-10" />
-               <p className="text-slate-500 absolute mt-20 relative z-10 font-bold tracking-widest uppercase text-sm">Live Chart Data Loading...</p>
+            <div className="flex-1 bg-slate-900 p-4 min-h-[260px] relative">
+              <ResponsiveContainer width="100%" height={260}>
+                {chartType === 'area' ? (
+                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="assetGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                    <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const d = payload[0].payload;
+                          return (
+                            <div className="bg-slate-800 text-white text-xs p-2.5 rounded-lg shadow-lg border border-slate-700 font-mono">
+                              <p className="text-amber-400 font-bold mb-0.5">{d.time}</p>
+                              <p className="text-sm font-bold text-emerald-400">${d.price}</p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <ReferenceLine y={selectedAsset.price} stroke="#3b82f6" strokeDasharray="3 3" />
+                    <Area type="monotone" dataKey="price" stroke="#3b82f6" strokeWidth={2.5} fillOpacity={1} fill="url(#assetGradient)" />
+                  </AreaChart>
+                ) : (
+                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#334155" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                    <YAxis domain={['dataMin - 0.5', 'dataMax + 0.5']} axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
+                    <Tooltip />
+                    <ReferenceLine y={selectedAsset.price} stroke="#10b981" strokeDasharray="3 3" />
+                    <Line type="monotone" dataKey="price" stroke="#10b981" strokeWidth={2.5} dot={false} />
+                  </LineChart>
+                )}
+              </ResponsiveContainer>
             </div>
           </div>
 

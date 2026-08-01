@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { formatCurrencyAmount, getCurrencyInfo } from '../../utils/currency';
-import { ArrowDownLeft, ArrowUpRight, Copy, QrCode, ChevronDown, CheckCircle, XCircle, Check, Wallet } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, ArrowRightLeft, Copy, QrCode, ChevronDown, CheckCircle, XCircle, Check, Wallet, Landmark, Zap } from 'lucide-react';
 import { sendCryptoTransferEmail } from '../../services/cryptoEmailService';
 
 const SUPPORTED_COINS = [
@@ -24,11 +24,11 @@ const createDefaultWallet = (userId: string) => {
   };
 };
 
-export default function CryptoWallet({ user }: any) {
+export default function CryptoWallet({ user, account, fetchAccount }: any) {
   // Synchronous immediate initialization - NO BLOCKING LOADING SCREEN!
   const [wallet, setWallet] = useState<any>(() => createDefaultWallet(user?.id));
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'receive' | 'send'>('portfolio');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'receive' | 'send' | 'main_transfer'>('portfolio');
   
   // Receive state
   const [selectedReceiveAsset, setSelectedReceiveAsset] = useState(SUPPORTED_COINS[0]);
@@ -40,6 +40,12 @@ export default function CryptoWallet({ user }: any) {
   const [sendAddress, setSendAddress] = useState('');
   const [sendAmount, setSendAmount] = useState('');
   const [sendLoading, setSendLoading] = useState(false);
+
+  // Main Balance Transfer state
+  const [mainTransferAsset, setMainTransferAsset] = useState(SUPPORTED_COINS[2]); // Default USDT
+  const [mainTransferAmount, setMainTransferAmount] = useState('');
+  const [mainTransferLoading, setMainTransferLoading] = useState(false);
+
   const [msg, setMsg] = useState({ type: '', text: '' });
 
   useEffect(() => {
@@ -229,6 +235,114 @@ export default function CryptoWallet({ user }: any) {
     }
   };
 
+  // Transfer from Main Account Balance to Crypto Balance
+  const handleMainBalanceTransfer = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg({ type: '', text: '' });
+    setMainTransferLoading(true);
+
+    const val = parseFloat(mainTransferAmount);
+    if (isNaN(val) || val <= 0) {
+      setMsg({ type: 'error', text: 'Please enter a valid transfer amount.' });
+      setMainTransferLoading(false);
+      return;
+    }
+
+    const currentMainBal = Number(account?.balance || 0);
+    if (currentMainBal < val) {
+      setMsg({ type: 'error', text: `Insufficient main balance. Available: ${formatCurrencyAmount(currentMainBal, currInfo)}` });
+      setMainTransferLoading(false);
+      return;
+    }
+
+    // Convert USD/Fiat value to target crypto asset amount
+    const cryptoAmount = Number((val / mainTransferAsset.price).toFixed(mainTransferAsset.symbol === 'USDT' ? 2 : 6));
+
+    try {
+      const refId = `CTX-MAIN-${Math.floor(100000 + Math.random() * 900000)}`;
+
+      // 1. Deduct from main bank account balance in Supabase
+      const newMainBal = currentMainBal - val;
+      if (account?.id) {
+        await supabase.from('accounts').update({ balance: newMainBal }).eq('id', account.id);
+      }
+
+      // 2. Add to user's crypto wallet balance in Supabase
+      const currentCoinBal = (wallet?.balances && wallet.balances[mainTransferAsset.symbol]) || 0;
+      const newCoinBal = currentCoinBal + cryptoAmount;
+      const newBalances = { ...wallet.balances, [mainTransferAsset.symbol]: newCoinBal };
+
+      if (wallet?.id) {
+        await supabase.from('crypto_wallets').update({ balances: newBalances }).eq('id', wallet.id);
+      }
+      setWallet({ ...wallet, balances: newBalances });
+
+      // 3. Insert transaction log into crypto_transactions table
+      if (wallet?.id) {
+        await supabase.from('crypto_transactions').insert([{
+          user_id: user.id,
+          wallet_id: wallet.id,
+          type: 'deposit',
+          asset: mainTransferAsset.symbol,
+          network: 'Main Balance Instant Transfer',
+          amount: cryptoAmount,
+          address: wallet.address || 'Internal Account',
+          status: 'completed',
+          created_at: new Date().toISOString()
+        }]);
+      }
+
+      // 4. Insert transaction log into bank transactions table for statement history
+      if (account?.id) {
+        await supabase.from('transactions').insert([{
+          user_id: user.id,
+          account_id: account.id,
+          type: 'transfer_out',
+          transfer_type: 'crypto_topup',
+          amount: val,
+          recipient: `Crypto Wallet (${mainTransferAsset.symbol})`,
+          bank_name: 'Safe Global Bank Crypto Services',
+          description: `Transfer to Crypto Wallet: ${cryptoAmount} ${mainTransferAsset.symbol}`,
+          status: 'completed',
+          created_at: new Date().toISOString()
+        }]);
+      }
+
+      // 5. Trigger fetchAccount to sync main balance across navbar and dashboard immediately
+      if (typeof fetchAccount === 'function') {
+        fetchAccount();
+      }
+
+      // 6. Trigger email receipt notification
+      if (user?.email) {
+        await sendCryptoTransferEmail({
+          type: 'incoming',
+          recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+          recipientEmail: user.email,
+          asset: mainTransferAsset.symbol,
+          assetName: mainTransferAsset.name,
+          amount: cryptoAmount,
+          network: 'Main Bank Account Transfer',
+          walletAddress: wallet?.address || 'Internal Crypto Wallet',
+          status: 'Completed',
+          referenceId: refId,
+          updatedBalance: `${newBalances[mainTransferAsset.symbol]} ${mainTransferAsset.symbol}`
+        });
+      }
+
+      setMsg({
+        type: 'success',
+        text: `Successfully transferred ${formatCurrencyAmount(val, currInfo)} from Main Balance into ${cryptoAmount} ${mainTransferAsset.symbol}! Confirmation email sent to ${user.email}.`
+      });
+      setMainTransferAmount('');
+    } catch (err: any) {
+      console.error('[CryptoWallet] Main balance transfer error:', err);
+      setMsg({ type: 'error', text: 'Failed to process transfer from main balance.' });
+    } finally {
+      setMainTransferLoading(false);
+    }
+  };
+
   // Calculate totals
   const activeAssets = SUPPORTED_COINS.map((coin, index) => {
     const balance = (wallet?.balances && wallet.balances[coin.symbol]) || 0;
@@ -255,22 +369,28 @@ export default function CryptoWallet({ user }: any) {
         <p className="text-slate-400 text-xs sm:text-sm font-semibold uppercase tracking-wider relative z-10">Total Crypto Account Value</p>
         <p className="text-3xl sm:text-4xl mt-2 font-black tracking-tight relative z-10">{formatCurrencyAmount(totalValue, currInfo)}</p>
         
-        <div className="flex gap-2 sm:gap-4 mt-6 relative z-10">
+        <div className="flex flex-wrap gap-2 sm:gap-3 mt-6 relative z-10">
           <button 
             onClick={() => { setActiveTab('receive'); setMsg({type:'',text:''}); }}
-            className={`flex-1 p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'receive' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'receive' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
           >
-            <ArrowDownLeft size={16} /> Receive
+            <ArrowDownLeft size={16} /> Deposit Crypto
           </button>
           <button 
             onClick={() => { setActiveTab('send'); setMsg({type:'',text:''}); }}
-            className={`flex-1 p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'send' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+            className={`flex-1 min-w-[120px] p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'send' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
           >
-            <ArrowUpRight size={16} /> Send
+            <ArrowUpRight size={16} /> Send Crypto
+          </button>
+          <button 
+            onClick={() => { setActiveTab('main_transfer'); setMsg({type:'',text:''}); }}
+            className={`flex-1 min-w-[140px] p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'main_transfer' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+          >
+            <ArrowRightLeft size={16} /> From Main Balance
           </button>
           <button 
             onClick={() => { setActiveTab('portfolio'); setMsg({type:'',text:''}); }}
-            className={`flex-1 p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'portfolio' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+            className={`flex-1 min-w-[100px] p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'portfolio' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
           >
             <Wallet size={16} /> Portfolio
           </button>
@@ -286,12 +406,29 @@ export default function CryptoWallet({ user }: any) {
 
       {activeTab === 'portfolio' && (
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-          <div className="flex justify-between items-center bg-gray-50/80 p-4 rounded-2xl border border-gray-100">
-            <div>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trading Account Balance</p>
-              <p className="text-lg font-bold text-gray-900 mt-0.5">{formatCurrencyAmount(tradingBalance, currInfo)}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex justify-between items-center bg-gray-50/80 p-4 rounded-2xl border border-gray-100">
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trading Account Balance</p>
+                <p className="text-lg font-bold text-gray-900 mt-0.5">{formatCurrencyAmount(tradingBalance, currInfo)}</p>
+              </div>
+              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Active</span>
             </div>
-            <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Active</span>
+
+            <div className="flex justify-between items-center bg-gradient-to-r from-emerald-50 via-teal-50/80 to-blue-50/60 p-4 rounded-2xl border border-emerald-100">
+              <div>
+                <p className="text-xs font-semibold text-emerald-800 uppercase tracking-wider flex items-center gap-1">
+                  <Landmark size={13} /> Main Bank Balance
+                </p>
+                <p className="text-lg font-bold text-gray-900 mt-0.5">{formatCurrencyAmount(Number(account?.balance || 0), currInfo)}</p>
+              </div>
+              <button
+                onClick={() => { setActiveTab('main_transfer'); setMsg({ type: '', text: '' }); }}
+                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-sm"
+              >
+                <ArrowRightLeft size={13} /> Transfer
+              </button>
+            </div>
           </div>
 
           <div>
@@ -493,6 +630,137 @@ export default function CryptoWallet({ user }: any) {
               className="w-full p-3.5 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 active:scale-95 transition-all shadow-lg shadow-slate-900/20 disabled:opacity-70"
             >
               {sendLoading ? 'Processing...' : 'Withdraw Crypto'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {activeTab === 'main_transfer' && (
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Zap size={20} className="text-amber-500 fill-amber-500" />
+                Transfer from Main Balance
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5 font-medium">Instantly top-up your crypto wallet from your primary bank account balance</p>
+            </div>
+            <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full flex items-center gap-1">
+              <Zap size={12} /> Instant 0% Fee
+            </span>
+          </div>
+
+          <form className="max-w-md mx-auto space-y-6" onSubmit={handleMainBalanceTransfer}>
+            {/* Main Balance Display Card */}
+            <div className="p-4 bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-2xl flex items-center justify-between shadow-md">
+              <div>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                  <Landmark size={13} /> Source Account
+                </p>
+                <p className="text-sm font-bold text-slate-200 mt-0.5">Primary Bank Account</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Available Balance</p>
+                <p className="text-lg font-black text-emerald-400 mt-0.5">
+                  {formatCurrencyAmount(Number(account?.balance || 0), currInfo)}
+                </p>
+              </div>
+            </div>
+
+            {/* Target Asset Selector */}
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">Target Crypto Asset</label>
+              <div className="relative">
+                <select 
+                  className="w-full p-3.5 bg-gray-50 border border-gray-200 rounded-xl appearance-none font-bold text-gray-900 focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                  value={mainTransferAsset.symbol}
+                  onChange={(e) => {
+                    const coin = SUPPORTED_COINS.find(c => c.symbol === e.target.value) || SUPPORTED_COINS[2];
+                    setMainTransferAsset(coin);
+                  }}
+                >
+                  {SUPPORTED_COINS.map(c => (
+                    <option key={c.symbol} value={c.symbol}>
+                      {c.name} ({c.symbol}) — Price: ${c.price.toLocaleString()}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3.5 top-4 text-gray-400 pointer-events-none" size={18} />
+              </div>
+            </div>
+
+            {/* Transfer Amount Input */}
+            <div>
+              <div className="flex justify-between mb-2">
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">Amount ({currInfo.code || 'USD'})</label>
+                <span className="text-xs font-bold text-gray-500">
+                  Max: {formatCurrencyAmount(Number(account?.balance || 0), currInfo)}
+                </span>
+              </div>
+              <div className="relative">
+                <input 
+                  type="number" 
+                  min="0.01"
+                  step="any"
+                  value={mainTransferAmount}
+                  onChange={e => setMainTransferAmount(e.target.value)}
+                  className="w-full py-3.5 pl-4 pr-16 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-emerald-500 outline-none transition text-base" 
+                  placeholder="0.00" 
+                  required 
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setMainTransferAmount((Number(account?.balance || 0)).toString())}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-emerald-700 hover:text-emerald-900 bg-emerald-100 px-2 py-1 rounded-lg transition"
+                >
+                  MAX
+                </button>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex gap-2 mt-2">
+                {[100, 500, 1000, 5000].map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setMainTransferAmount(amt.toString())}
+                    className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg transition"
+                  >
+                    +${amt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Conversion Calculation Card */}
+            {parseFloat(mainTransferAmount) > 0 && !isNaN(parseFloat(mainTransferAmount)) && (
+              <div className="p-4 bg-emerald-50/80 border border-emerald-100 rounded-2xl space-y-2">
+                <div className="flex justify-between items-center text-xs font-medium text-emerald-900">
+                  <span>Exchange Rate:</span>
+                  <span className="font-bold font-mono">1 {mainTransferAsset.symbol} = ${mainTransferAsset.price.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm font-bold text-emerald-950 pt-1 border-t border-emerald-200/60">
+                  <span>You Receive:</span>
+                  <span className="text-base font-black text-emerald-700 font-mono">
+                    ~ {(parseFloat(mainTransferAmount) / mainTransferAsset.price).toFixed(mainTransferAsset.symbol === 'USDT' ? 2 : 6)} {mainTransferAsset.symbol}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <button 
+              type="submit" 
+              disabled={mainTransferLoading}
+              className="w-full p-4 bg-emerald-700 text-white rounded-2xl font-bold hover:bg-emerald-800 active:scale-95 transition-all shadow-lg shadow-emerald-700/20 disabled:opacity-70 flex items-center justify-center gap-2 text-sm"
+            >
+              {mainTransferLoading ? (
+                <span>Processing Transfer...</span>
+              ) : (
+                <>
+                  <Zap size={16} />
+                  <span>Confirm Transfer to Crypto Wallet</span>
+                </>
+              )}
             </button>
           </form>
         </div>

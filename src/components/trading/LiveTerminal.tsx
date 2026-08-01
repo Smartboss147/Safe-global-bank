@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { 
   INITIAL_MARKETS, MarketInstrument, generateCandlesForSymbol 
@@ -58,24 +58,44 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
   // Real-time price simulation tick generator
   useEffect(() => {
     const timer = setInterval(() => {
+      let updatedActivePrice: number | null = null;
+
       setMarkets(prev =>
         prev.map(m => {
           const delta = (Math.random() - 0.49) * (m.price * 0.0015);
           const newPrice = Math.max(0.0001, m.price + delta);
+          const formattedPrice = Number(newPrice.toFixed(m.price > 100 ? 2 : 4));
+          if (m.symbol === selectedSymbol) {
+            updatedActivePrice = formattedPrice;
+          }
           const newBid = newPrice - (m.spread * 0.0001);
           const newAsk = newPrice + (m.spread * 0.0001);
           return {
             ...m,
-            price: Number(newPrice.toFixed(m.price > 100 ? 2 : 4)),
+            price: formattedPrice,
             bid: Number(newBid.toFixed(m.price > 100 ? 2 : 4)),
             ask: Number(newAsk.toFixed(m.price > 100 ? 2 : 4))
           };
         })
       );
+
+      if (updatedActivePrice !== null) {
+        const tickPrice = updatedActivePrice;
+        setCandles(cPrev => {
+          if (!cPrev || cPrev.length === 0) return cPrev;
+          const lastCandle = { ...cPrev[cPrev.length - 1] };
+          lastCandle.close = tickPrice;
+          lastCandle.high = Math.max(lastCandle.high, tickPrice);
+          lastCandle.low = Math.min(lastCandle.low, tickPrice);
+          lastCandle.isUp = lastCandle.close >= lastCandle.open;
+          lastCandle.openClose = [Math.min(lastCandle.open, lastCandle.close), Math.max(lastCandle.open, lastCandle.close)];
+          return [...cPrev.slice(0, cPrev.length - 1), lastCandle];
+        });
+      }
     }, 2500);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [selectedSymbol]);
 
   // Helper to load local trades
   const getLocalTrades = (uId: string) => {
@@ -95,7 +115,7 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
   };
 
   // Fetch trades from Supabase and merge with local persistence
-  const fetchTrades = async () => {
+  const fetchTrades = useCallback(async () => {
     const currentUserId = user?.id || user?.uid || 'user_demo_100';
     try {
       const { data, error } = await supabase
@@ -120,27 +140,31 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
       });
 
       merged.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      
+      // Store synced positions in local storage to prevent data loss on refresh
+      saveLocalTrades(currentUserId, merged);
+
       setTrades(merged);
     } catch (e) {
       console.warn('Error fetching trades:', e);
       const local = getLocalTrades(currentUserId);
       setTrades(local);
     }
-  };
+  }, [user?.id, user?.uid, user]);
 
   useEffect(() => {
     fetchTrades();
     const currentUserId = user?.id || user?.uid;
     if (!currentUserId) return;
 
-    const channel = supabase.channel('live_terminal_trades')
+    const channel = supabase.channel(`live_terminal_trades_${currentUserId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'trades', filter: `user_id=eq.${currentUserId}` }, () => {
         fetchTrades();
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user]);
+  }, [user?.id, user?.uid, user, fetchTrades]);
 
   const toggleFavorite = (symbol: string) => {
     setFavorites(prev =>
