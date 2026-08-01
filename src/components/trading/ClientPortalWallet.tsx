@@ -10,9 +10,10 @@ interface ClientPortalWalletProps {
   account: any;
   fetchAccount?: () => void;
   isDarkMode?: boolean;
+  selectedAccountType?: string;
 }
 
-export default function ClientPortalWallet({ user, account, fetchAccount, isDarkMode = false }: ClientPortalWalletProps) {
+export default function ClientPortalWallet({ user, account, fetchAccount, isDarkMode = false, selectedAccountType = 'Standard Live' }: ClientPortalWalletProps) {
   const userCurr = account?.currency_code || account?.currency || user?.currency_code || user?.currency || user?.country || 'USD';
   const currInfo = getCurrencyInfo(userCurr);
 
@@ -23,46 +24,112 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
   const [selectedAccId, setSelectedAccId] = useState('');
   
   useEffect(() => {
-    if (!user?.id) return;
-
     const fetchTradingAccounts = async () => {
-      const { data } = await supabase.from('trading_accounts').select('*').eq('user_id', user.id);
-      if (data && data.length > 0) {
-        console.log('[ClientPortalWallet] Fresh trading accounts from Supabase:', data);
-        const mapped = data.map(d => ({
-          id: d.id,
-          number: d.account_number,
-          type: 'Standard Live',
-          currency: currInfo.code,
-          leverage: d.leverage || '1:100',
-          balance: d.balance || 0,
-          equity: d.equity || 0,
-          isLive: true
-        }));
-        setTradingAccounts(mapped);
+      let mapped: any[] = [];
+      if (user?.id) {
+        const { data } = await supabase.from('trading_accounts').select('*').eq('user_id', user.id);
+        if (data && data.length > 0) {
+          console.log('[ClientPortalWallet] Fresh trading accounts from Supabase:', data);
+          mapped = data.map(d => ({
+            id: d.id,
+            number: d.account_number,
+            type: d.account_type || d.type || 'Standard Live',
+            currency: currInfo.code,
+            leverage: d.leverage || '1:100',
+            balance: Number(d.balance) || 0,
+            equity: Number(d.equity) || 0,
+            isLive: true
+          }));
+        }
+      }
+
+      // If no accounts returned from database, create or set fallback account
+      if (mapped.length === 0) {
+        const accType = selectedAccountType || 'Standard Live';
+        const accNum = `SGT-${Math.floor(100000 + Math.random() * 900000)}-LIVE`;
+        const initBal = Number(account?.balance) || 0;
+
+        if (user?.id) {
+          try {
+            const { data: inserted } = await supabase.from('trading_accounts').insert([{
+              user_id: user.id,
+              account_number: accNum,
+              account_type: accType,
+              balance: initBal,
+              equity: initBal,
+              margin: 0,
+              free_margin: initBal,
+              leverage: '1:500',
+              status: 'active'
+            }]).select().single();
+
+            if (inserted) {
+              mapped = [{
+                id: inserted.id,
+                number: inserted.account_number,
+                type: accType,
+                currency: currInfo.code,
+                leverage: inserted.leverage || '1:500',
+                balance: Number(inserted.balance) || 0,
+                equity: Number(inserted.equity) || 0,
+                isLive: true
+              }];
+            }
+          } catch (e) {
+            console.warn('[ClientPortalWallet] Notice inserting fallback trading account:', e);
+          }
+        }
+
+        if (mapped.length === 0) {
+          mapped = [{
+            id: 'acc_main_' + (user?.id ? user.id.substring(0, 6) : 'default'),
+            number: accNum,
+            type: accType,
+            currency: currInfo.code,
+            leverage: '1:500',
+            balance: Number(account?.balance) || 0,
+            equity: Number(account?.balance) || 0,
+            isLive: true
+          }];
+        }
+      }
+
+      setTradingAccounts(mapped);
+      if (mapped.length > 0) {
         setSelectedAccId(mapped[0].id);
       }
     };
 
     fetchTradingAccounts();
 
-    const tradingChannel = supabase.channel(`trading_acc_realtime_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_accounts', filter: `user_id=eq.${user.id}` }, payload => {
-        console.log('[ClientPortalWallet Realtime] Database change event:', payload);
-        fetchTradingAccounts();
-      })
-      .subscribe();
+    if (user?.id) {
+      const tradingChannel = supabase.channel(`trading_acc_realtime_${user.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'trading_accounts', filter: `user_id=eq.${user.id}` }, payload => {
+          console.log('[ClientPortalWallet Realtime] Database change event:', payload);
+          fetchTradingAccounts();
+        })
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(tradingChannel);
-    };
-  }, [user?.id, currInfo.code]);
+      return () => {
+        supabase.removeChannel(tradingChannel);
+      };
+    }
+  }, [user?.id, currInfo.code, selectedAccountType]);
 
   const [showNewAccModal, setShowNewAccModal] = useState(false);
   const [newAccType, setNewAccType] = useState('Standard Live');
   const [newAccLeverage, setNewAccLeverage] = useState('1:100');
 
-  const activeTradingAccount = tradingAccounts.find(a => a.id === selectedAccId) || tradingAccounts[0] || {};
+  const activeTradingAccount = tradingAccounts.find(a => a.id === selectedAccId) || tradingAccounts[0] || {
+    id: 'default',
+    number: 'SGT-100200-LIVE',
+    type: selectedAccountType || 'Standard Live',
+    currency: currInfo.code,
+    leverage: '1:500',
+    balance: Number(account?.balance) || 0,
+    equity: Number(account?.balance) || 0,
+    isLive: true
+  };
 
   // Perform Internal Transfer
   const handleInternalTransfer = async () => {
@@ -175,10 +242,10 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
     doc.setFontSize(16);
     doc.text("SAFE GLOBAL TRADE - Trading Wallet Summary", 14, 20);
     doc.setFontSize(10);
-    doc.text(`Account ID: ${activeTradingAccount.number}`, 14, 28);
-    doc.text(`Leverage: ${activeTradingAccount.leverage}`, 14, 34);
-    doc.text(`Balance: $${activeTradingAccount.balance.toFixed(2)}`, 14, 40);
-    doc.text(`Equity: $${activeTradingAccount.equity.toFixed(2)}`, 14, 46);
+    doc.text(`Account ID: ${activeTradingAccount?.number || 'SGT-100200-LIVE'}`, 14, 28);
+    doc.text(`Leverage: ${activeTradingAccount?.leverage || '1:500'}`, 14, 34);
+    doc.text(`Balance: $${(activeTradingAccount?.balance || 0).toFixed(2)}`, 14, 40);
+    doc.text(`Equity: $${(activeTradingAccount?.equity || 0).toFixed(2)}`, 14, 46);
 
     doc.save(`SGT_Wallet_Summary_${Date.now()}.pdf`);
   };
@@ -220,27 +287,27 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
               <div className="flex items-center justify-between">
                 <div>
                   <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-black uppercase ${
-                    acc.isLive ? 'bg-emerald-100 text-emerald-800' : 'bg-purple-100 text-purple-800'
+                    acc.isLive ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300'
                   }`}>
-                    {acc.type}
+                    {acc.type || 'Standard Live'}
                   </span>
-                  <p className="font-mono font-black text-sm text-slate-900 dark:text-white mt-1">{acc.number}</p>
+                  <p className="font-mono font-black text-sm text-slate-900 dark:text-white mt-1">{acc.number || 'SGT-000000'}</p>
                 </div>
 
                 <div className="text-right">
                   <p className="text-[10px] text-slate-400 uppercase font-bold">Leverage</p>
-                  <p className="font-bold text-xs text-amber-600">{acc.leverage}</p>
+                  <p className="font-bold text-xs text-amber-600">{acc.leverage || '1:100'}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 p-3 bg-slate-50 dark:bg-slate-800/60 rounded-2xl text-xs">
                 <div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase">Balance</p>
-                  <p className="font-extrabold text-base text-slate-900 dark:text-white">${acc.balance.toLocaleString()}</p>
+                  <p className="font-extrabold text-base text-slate-900 dark:text-white">${(acc.balance || 0).toLocaleString()}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase">Equity</p>
-                  <p className="font-extrabold text-base text-emerald-600 dark:text-emerald-400">${acc.equity.toLocaleString()}</p>
+                  <p className="font-extrabold text-base text-emerald-600 dark:text-emerald-400">${(acc.equity || 0).toLocaleString()}</p>
                 </div>
               </div>
             </div>
@@ -271,8 +338,8 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
                 onChange={e => setTransferDirection(e.target.value as any)}
                 className={`w-full p-3 text-xs rounded-xl border font-bold outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'}`}
               >
-                <option value="to_trading">Bank Wallet ➔ Trading Account ({activeTradingAccount.number})</option>
-                <option value="to_bank">Trading Account ({activeTradingAccount.number}) ➔ Bank Wallet</option>
+                <option value="to_trading">Bank Wallet ➔ Trading Account ({activeTradingAccount?.number || 'Main Account'})</option>
+                <option value="to_bank">Trading Account ({activeTradingAccount?.number || 'Main Account'}) ➔ Bank Wallet</option>
               </select>
             </div>
 
@@ -306,7 +373,7 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
               </div>
               <div className="flex justify-between border-b border-slate-200 dark:border-slate-700 pb-2">
                 <span className="text-slate-500">Selected Trading Account:</span>
-                <span className="font-extrabold text-blue-600">${activeTradingAccount.balance.toLocaleString()}</span>
+                <span className="font-extrabold text-blue-600">${(activeTradingAccount?.balance || 0).toLocaleString()}</span>
               </div>
             </div>
 

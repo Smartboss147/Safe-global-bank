@@ -58,24 +58,79 @@ app.post('/api/admin/delete-user', verifyAdmin, async (req, res) => {
 
 app.post('/api/admin/update-balance', verifyAdmin, async (req, res) => {
   const { accountId, newBalance, reason, targetUserId } = req.body;
-  if (!accountId || newBalance === undefined) return res.status(400).json({ error: 'Missing parameters' });
+  if ((!accountId && !targetUserId) || newBalance === undefined) {
+    return res.status(400).json({ error: 'Missing parameters: accountId or targetUserId and newBalance required' });
+  }
   
   try {
-    const { data: account } = await supabaseAdmin.from('accounts').select('balance, currency').eq('id', accountId).single();
-    const oldBalance = account ? account.balance : 0;
+    console.log(`[Server Admin API] Balance update request received for user ${targetUserId} / account ${accountId}. Client: supabaseAdmin (Service Role Client)`);
     
-    const { error: updateError } = await supabaseAdmin.from('accounts').update({ balance: newBalance }).eq('id', accountId);
-    if (updateError) throw updateError;
+    let account = null;
+    if (targetUserId) {
+      const { data } = await supabaseAdmin.from('accounts').select('balance, currency').eq('user_id', targetUserId).maybeSingle();
+      account = data;
+    }
+    if (!account && accountId && !accountId.startsWith('acc_')) {
+      const { data } = await supabaseAdmin.from('accounts').select('balance, currency').eq('id', accountId).maybeSingle();
+      account = data;
+    }
+    const oldBalance = account ? Number(account.balance) || 0 : 0;
     
-    // Log transaction
+    let updatedAcc = null;
+    // 1. Try update by user_id
+    if (targetUserId) {
+      const { data, error } = await supabaseAdmin.from('accounts').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('user_id', targetUserId).select();
+      if (!error && data && data.length > 0) {
+        updatedAcc = data[0];
+        console.log('[Server Admin API] Updated accounts table by user_id via supabaseAdmin:', updatedAcc);
+      }
+    }
+    
+    // 2. Try update by id if not updated
+    if (!updatedAcc && accountId && !accountId.startsWith('acc_')) {
+      const { data, error } = await supabaseAdmin.from('accounts').update({ balance: newBalance, updated_at: new Date().toISOString() }).eq('id', accountId).select();
+      if (!error && data && data.length > 0) {
+        updatedAcc = data[0];
+        console.log('[Server Admin API] Updated accounts table by id via supabaseAdmin:', updatedAcc);
+      }
+    }
+    
+    // 3. Upsert if still no account record
+    if (!updatedAcc && targetUserId) {
+      const { data, error } = await supabaseAdmin.from('accounts').upsert({
+        user_id: targetUserId,
+        account_number: `ACC-${targetUserId.substring(0, 6).toUpperCase()}`,
+        balance: newBalance,
+        currency: account?.currency || 'USD',
+        status: 'active'
+      }, { onConflict: 'user_id' }).select().single();
+      if (!error && data) {
+        updatedAcc = data;
+        console.log('[Server Admin API] Upserted account record via supabaseAdmin:', updatedAcc);
+      } else if (error) {
+        console.error('[Server Admin API Error] Upsert failed via supabaseAdmin:', error);
+      }
+    }
+
+    // Also sync balance to profiles table if column exists
+    if (targetUserId) {
+      try {
+        await supabaseAdmin.from('profiles').update({ balance: newBalance }).eq('id', targetUserId);
+      } catch (e) {
+        console.warn('[Server Admin API Notice] Profiles table balance sync notice:', e);
+      }
+    }
+    
+    // Log transaction for ledger
     await supabaseAdmin.from('transactions').insert([{
       user_id: targetUserId || 'unknown',
-      account_id: accountId,
-      type: newBalance > oldBalance ? 'admin_credit' : 'admin_debit',
+      account_id: updatedAcc?.id || accountId || 'main',
+      type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
       amount: Math.abs(newBalance - oldBalance),
       currency: account?.currency || 'USD',
       status: 'completed',
       description: `Admin balance adjustment: ${reason}`,
+      created_at: new Date().toISOString()
     }]);
     
     // Log audit
@@ -88,8 +143,9 @@ app.post('/api/admin/update-balance', verifyAdmin, async (req, res) => {
       ip_address: req.ip || '127.0.0.1'
     }]);
     
-    res.json({ success: true, newBalance });
-  } catch (err) {
+    res.json({ success: true, newBalance, account: updatedAcc });
+  } catch (err: any) {
+    console.error('[Server Admin API Error] update-balance exception:', err);
     res.status(500).json({ error: err.message });
   }
 });

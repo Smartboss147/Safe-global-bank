@@ -259,34 +259,128 @@ export default function AdminDashboard({ user }: { user: any }) {
   const handleUpdateBalance = async (accountId: string, newBalance: number, reason: string) => {
     const userCurrInfo = getCurrencyByCountry(selectedUser?.country);
     try {
-      let targetAcc = accounts.find(a => a.id === accountId || a.user_id === selectedUser?.id || a.userId === selectedUser?.id);
+      const targetUserId = selectedUser?.id || (accounts.find(a => a.id === accountId)?.user_id);
+      let targetAcc = accounts.find(a => a.id === accountId || a.user_id === targetUserId || a.userId === targetUserId);
       const oldBalance = targetAcc ? Number(targetAcc.balance) || 0 : 0;
-      
-      if (targetAcc && targetAcc.id && !targetAcc.id.startsWith('acc_')) {
-        await supabase.from('accounts').update({ balance: newBalance }).eq('id', targetAcc.id);
-      } else if (selectedUser?.id) {
-        const { data: newAcc } = await supabase.from('accounts').upsert([{
-          user_id: selectedUser.id,
-          account_number: targetAcc?.account_number || `ACC-${selectedUser.id.substring(0, 6).toUpperCase()}`,
-          balance: newBalance,
-          currency: userCurrInfo.code,
-          currency_code: userCurrInfo.code,
-          currency_symbol: userCurrInfo.symbol,
-          account_type: 'checking'
-        }], { onConflict: 'user_id' }).select().single();
-        if (newAcc) targetAcc = newAcc;
+
+      console.log(`[Admin Wallet System Audit] Starting balance update process for user: ${targetUserId}, account: ${accountId}`);
+      console.log(`[Admin Wallet System Audit] Client instance initially invoked: supabase (Anon/Authenticated Client)`);
+
+      let updateResult: any = null;
+      let updateError: any = null;
+
+      // 1. Attempt direct update on accounts table by user_id
+      if (targetUserId) {
+        const { data, error } = await supabase
+          .from('accounts')
+          .update({ balance: newBalance, updated_at: new Date().toISOString() })
+          .eq('user_id', targetUserId)
+          .select();
+        if (!error && data && data.length > 0) {
+          updateResult = data[0];
+          console.log('[Admin Wallet System Audit] Successfully updated account by user_id via supabase client:', updateResult);
+        } else {
+          updateError = error;
+          console.warn('[Admin Wallet System Audit] Direct update by user_id returned notice/error:', error);
+        }
+      }
+
+      // 2. Attempt update by id if valid account ID
+      if (!updateResult && accountId && !accountId.startsWith('acc_')) {
+        const { data, error } = await supabase
+          .from('accounts')
+          .update({ balance: newBalance, updated_at: new Date().toISOString() })
+          .eq('id', accountId)
+          .select();
+        if (!error && data && data.length > 0) {
+          updateResult = data[0];
+          console.log('[Admin Wallet System Audit] Successfully updated account by id via supabase client:', updateResult);
+        } else if (error) {
+          updateError = error;
+          console.warn('[Admin Wallet System Audit] Direct update by id returned notice/error:', error);
+        }
+      }
+
+      // 3. Attempt upsert via supabase client if record doesn't exist
+      if (!updateResult && targetUserId) {
+        const { data, error } = await supabase
+          .from('accounts')
+          .upsert([{
+            user_id: targetUserId,
+            account_number: targetAcc?.account_number || `ACC-${targetUserId.substring(0, 6).toUpperCase()}`,
+            balance: newBalance,
+            currency: userCurrInfo.code,
+            currency_code: userCurrInfo.code,
+            currency_symbol: userCurrInfo.symbol,
+            account_type: 'checking',
+            status: 'active'
+          }], { onConflict: 'user_id' })
+          .select()
+          .single();
+
+        if (!error && data) {
+          updateResult = data;
+          console.log('[Admin Wallet System Audit] Successfully upserted account record via supabase client:', updateResult);
+        } else {
+          updateError = error;
+          console.warn('[Admin Wallet System Audit] Upsert via supabase client returned notice/error:', error);
+        }
+      }
+
+      // 4. Fallback to Backend Admin API (supabaseAdmin Service Role Client) if client update failed or was blocked by RLS
+      if (!updateResult && targetUserId) {
+        console.log('[Admin Wallet System Audit] Invoking backend Admin API fallback (Client: supabaseAdmin - Service Role)...');
+        try {
+          const session = (await supabase.auth.getSession()).data.session;
+          const token = session?.access_token;
+          const res = await fetch('/api/admin/update-balance', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify({
+              accountId: accountId && !accountId.startsWith('acc_') ? accountId : undefined,
+              targetUserId,
+              newBalance,
+              reason
+            })
+          });
+          const apiJson = await res.json();
+          if (res.ok && apiJson.success) {
+            console.log('[Admin Wallet System Audit] Backend Admin API (supabaseAdmin service role) successfully persisted balance:', apiJson);
+            updateResult = apiJson.account || { user_id: targetUserId, balance: newBalance };
+          } else {
+            console.error('[Admin Wallet System Audit Error] Backend Admin API response error:', apiJson);
+          }
+        } catch (apiErr) {
+          console.error('[Admin Wallet System Audit Error] Backend Admin API request failed:', apiErr);
+        }
+      }
+
+      if (!updateResult) {
+        throw new Error(updateError?.message || 'Failed to persist balance in database. Please check database permissions or connection.');
+      }
+
+      // Sync balance to profiles table if mirrored
+      if (targetUserId) {
+        try {
+          await supabase.from('profiles').update({ balance: newBalance }).eq('id', targetUserId);
+        } catch (e) {
+          console.warn('[Admin Wallet System Audit] Syncing balance to profiles table notice:', e);
+        }
       }
 
       // Update local state immediately for fast UI feedback
       setAccounts(prev => {
-        const existing = prev.find(a => a.id === accountId || a.user_id === selectedUser?.id || a.userId === selectedUser?.id);
+        const existing = prev.find(a => a.id === accountId || a.user_id === targetUserId || a.userId === targetUserId);
         if (existing) {
-          return prev.map(a => (a.id === existing.id ? { ...a, balance: newBalance } : a));
-        } else if (selectedUser?.id) {
+          return prev.map(a => (a.id === existing.id || a.user_id === targetUserId ? { ...a, balance: newBalance } : a));
+        } else if (targetUserId) {
           return [...prev, {
-            id: targetAcc?.id || accountId,
-            user_id: selectedUser.id,
-            account_number: targetAcc?.account_number || `ACC-${selectedUser.id.substring(0, 6).toUpperCase()}`,
+            id: updateResult.id || accountId,
+            user_id: targetUserId,
+            account_number: updateResult.account_number || `ACC-${targetUserId.substring(0, 6).toUpperCase()}`,
             balance: newBalance,
             currency: userCurrInfo.code,
             currency_code: userCurrInfo.code,
@@ -295,11 +389,22 @@ export default function AdminDashboard({ user }: { user: any }) {
         }
         return prev;
       });
+
+      // Update modal selectedUser.account if open
+      if (selectedUser && selectedUser.id === targetUserId) {
+        setSelectedUser((prev: any) => prev ? {
+          ...prev,
+          account: {
+            ...(prev.account || {}),
+            balance: newBalance
+          }
+        } : prev);
+      }
       
       // Log transaction for audit integrity
       await supabase.from('transactions').insert([{
-        user_id: selectedUser?.id || targetAcc?.user_id || 'admin_adj',
-        account_id: targetAcc?.id || accountId,
+        user_id: targetUserId,
+        account_id: updateResult.id || accountId,
         type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
         amount: Math.abs(newBalance - oldBalance),
         currency: targetAcc?.currency_code || targetAcc?.currency || userCurrInfo.code,
@@ -308,16 +413,18 @@ export default function AdminDashboard({ user }: { user: any }) {
         created_at: new Date().toISOString()
       }]);
 
-      await logAuditAction('WALLET_ADJUSTMENT', selectedUser?.id || accountId, `Balance adjusted from ${formatCurrencyAmount(oldBalance, userCurrInfo)} to ${formatCurrencyAmount(newBalance, userCurrInfo)}. Reason: ${reason}`);
-      setMsg({ type: 'success', text: `Wallet balance updated to ${formatCurrencyAmount(newBalance, userCurrInfo)} and logged in transaction ledger.` });
+      await logAuditAction('WALLET_ADJUSTMENT', targetUserId, `Balance adjusted from ${formatCurrencyAmount(oldBalance, userCurrInfo)} to ${formatCurrencyAmount(newBalance, userCurrInfo)}. Reason: ${reason}`);
+      setMsg({ type: 'success', text: `Wallet balance updated to ${formatCurrencyAmount(newBalance, userCurrInfo)} in Supabase database and logged.` });
       setIsWalletModalOpen(false);
-      fetchData();
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId: targetUserId, newBalance } }));
+      }
+
+      fetchData(true);
     } catch (err: any) {
-      console.log("Error updating balance:", err);
-      // Fallback local update if network error occurs
-      setAccounts(prev => prev.map(a => (a.id === accountId || a.user_id === selectedUser?.id) ? { ...a, balance: newBalance } : a));
-      setMsg({ type: 'success', text: `Wallet balance updated locally to ${formatCurrencyAmount(newBalance, userCurrInfo)}.` });
-      setIsWalletModalOpen(false);
+      console.error("[Admin Wallet System Audit Error] Failed to update balance:", err);
+      setMsg({ type: 'error', text: `Error updating balance: ${err.message || 'Database update failed'}` });
     }
   };
 

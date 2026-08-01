@@ -14,6 +14,7 @@ export default function TradingPlatform({ user, account }: { user: any; account:
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [liveEquity, setLiveEquity] = useState<number>(account?.balance || 1000);
   const [selectedAccount, setSelectedAccount] = useState<any>(account);
+  const [selectedAccountType, setSelectedAccountType] = useState<string>('Standard Live');
 
   useEffect(() => {
     if (account?.balance) {
@@ -68,7 +69,10 @@ export default function TradingPlatform({ user, account }: { user: any; account:
 
         {activeTab === 'accounts' && (
           <AccountTypesView
-            onSelectAccountType={(type) => setActiveTab('wallet')}
+            onSelectAccountType={(type) => {
+              setSelectedAccountType(type);
+              setActiveTab('wallet');
+            }}
             isDarkMode={isDarkMode}
           />
         )}
@@ -84,6 +88,7 @@ export default function TradingPlatform({ user, account }: { user: any; account:
           <ClientPortalWallet
             user={user}
             account={account}
+            selectedAccountType={selectedAccountType}
             isDarkMode={isDarkMode}
           />
         )}
