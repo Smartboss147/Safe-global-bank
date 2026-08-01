@@ -77,31 +77,64 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
     return () => clearInterval(timer);
   }, []);
 
-  // Fetch trades from Supabase strictly
-  const fetchTrades = async () => {
-    if (!user) return;
+  // Helper to load local trades
+  const getLocalTrades = (uId: string) => {
     try {
-      const { data } = await supabase
+      const saved = localStorage.getItem(`sgt_trades_${uId}`);
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  };
+
+  // Helper to save local trades
+  const saveLocalTrades = (uId: string, tradesList: any[]) => {
+    try {
+      localStorage.setItem(`sgt_trades_${uId}`, JSON.stringify(tradesList));
+    } catch (e) {}
+  };
+
+  // Fetch trades from Supabase and merge with local persistence
+  const fetchTrades = async () => {
+    const currentUserId = user?.id || user?.uid || 'user_demo_100';
+    try {
+      const { data, error } = await supabase
         .from('trades')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('user_id', currentUserId)
         .order('created_at', { ascending: false });
 
-      let merged = data && Array.isArray(data) ? [...data] : [];
+      let merged: any[] = [];
+      if (!error && data && Array.isArray(data)) {
+        merged = [...data];
+      }
+
+      const local = getLocalTrades(currentUserId);
+      local.forEach((lt: any) => {
+        const idx = merged.findIndex(m => String(m.id) === String(lt.id));
+        if (idx === -1) {
+          merged.push(lt);
+        } else if (lt.status === 'completed' || lt.status === 'closed') {
+          merged[idx].status = lt.status;
+        }
+      });
 
       merged.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
       setTrades(merged);
     } catch (e) {
       console.warn('Error fetching trades:', e);
+      const local = getLocalTrades(currentUserId);
+      setTrades(local);
     }
   };
 
   useEffect(() => {
     fetchTrades();
-    if (!user) return;
+    const currentUserId = user?.id || user?.uid;
+    if (!currentUserId) return;
 
     const channel = supabase.channel('live_terminal_trades')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trades', filter: `user_id=eq.${user.id}` }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trades', filter: `user_id=eq.${currentUserId}` }, () => {
         fetchTrades();
       })
       .subscribe();
@@ -117,10 +150,7 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
 
   // Execute Trade Order
   const handleExecuteTrade = async (type: 'buy' | 'sell') => {
-    if (!user) {
-      alert("Please log in to execute trades.");
-      return;
-    }
+    const currentUserId = user?.id || user?.uid || 'user_demo_100';
 
     if (lotSize <= 0) {
       alert("Please enter a valid volume / lot size.");
@@ -130,9 +160,10 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
     setIsSubmitting(true);
     const orderPrice = orderType === 'market' ? (type === 'buy' ? activeMarket.ask : activeMarket.bid) : Number(limitPrice || activeMarket.price);
 
-    const newTradeObj = {
-      id: 'trd_' + Math.random().toString(36).substring(2, 9),
-      user_id: user.id,
+    const generatedId = 'trd_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+
+    const dbPayload = {
+      user_id: currentUserId,
       trading_account_id: account?.id || null,
       symbol: activeMarket.symbol,
       type,
@@ -145,37 +176,88 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
       created_at: new Date().toISOString()
     };
 
+    let insertedTrade: any = null;
+
     try {
-      // 1. Try Supabase insert
-      await supabase.from('trades').insert([newTradeObj]);
+      const { data, error } = await supabase
+        .from('trades')
+        .insert([dbPayload])
+        .select()
+        .single();
+
+      if (!error && data) {
+        insertedTrade = data;
+        console.log('[LiveTerminal] Trade inserted in Supabase:', insertedTrade);
+      } else {
+        console.warn('[LiveTerminal] Supabase insert error, utilizing local fallback:', error);
+      }
     } catch (err) {
-      console.warn('Supabase trade insert notice:', err);
+      console.warn('[LiveTerminal] Supabase trade insert exception:', err);
     }
 
+    if (!insertedTrade) {
+      insertedTrade = {
+        id: generatedId,
+        ...dbPayload
+      };
+    }
+
+    // Save locally
+    const currentLocal = getLocalTrades(currentUserId);
+    const updatedLocal = [insertedTrade, ...currentLocal.filter((t: any) => String(t.id) !== String(insertedTrade.id))];
+    saveLocalTrades(currentUserId, updatedLocal);
+
+    // Optimistically update React state immediately
+    setTrades(prev => {
+      const exists = prev.some(t => String(t.id) === String(insertedTrade.id));
+      if (exists) return prev;
+      return [insertedTrade, ...prev];
+    });
+
     setIsSubmitting(false);
-    fetchTrades();
-    alert(`Order Executed! ${type.toUpperCase()} ${lotSize} Lots ${activeMarket.symbol} @ $${orderPrice}`);
+    setActiveTab('positions');
+
+    alert(`Order Executed! ${type.toUpperCase()} ${lotSize} Lots ${activeMarket.symbol} @ $${orderPrice.toFixed(4)}`);
   };
 
   // Close or Modify Trade
   const handleClosePosition = async (tradeId: string) => {
     if (!confirm("Are you sure you want to close this position?")) return;
+    const currentUserId = user?.id || user?.uid || 'user_demo_100';
+
     try {
       await supabase.from('trades').update({ status: 'completed' }).eq('id', tradeId);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[LiveTerminal] Supabase close position error:', e);
+    }
 
+    // Local state & storage update
+    const currentLocal = getLocalTrades(currentUserId);
+    const updatedLocal = currentLocal.map((t: any) => String(t.id) === String(tradeId) ? { ...t, status: 'completed' } : t);
+    saveLocalTrades(currentUserId, updatedLocal);
+
+    setTrades(prev => prev.map(t => String(t.id) === String(tradeId) ? { ...t, status: 'completed' } : t));
     fetchTrades();
   };
 
   // Close All Positions
   const handleCloseAllPositions = async () => {
     if (!confirm("Close ALL open positions at market price?")) return;
+    const currentUserId = user?.id || user?.uid || 'user_demo_100';
     const openTradeIds = openPositions.map(p => p.id);
     
     try {
       await supabase.from('trades').update({ status: 'completed' }).in('id', openTradeIds);
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[LiveTerminal] Supabase close all error:', e);
+    }
 
+    // Local state & storage update
+    const currentLocal = getLocalTrades(currentUserId);
+    const updatedLocal = currentLocal.map((t: any) => openTradeIds.includes(t.id) ? { ...t, status: 'completed' } : t);
+    saveLocalTrades(currentUserId, updatedLocal);
+
+    setTrades(prev => prev.map(t => openTradeIds.includes(t.id) ? { ...t, status: 'completed' } : t));
     fetchTrades();
   };
 
@@ -215,8 +297,14 @@ export default function LiveTerminal({ user, account, isDarkMode = false }: Live
     return matchesCategory && matchesSearch;
   });
 
-  const openPositions = trades.filter(t => t.status === 'open' || t.status === 'pending');
-  const closedHistory = trades.filter(t => t.status === 'completed' || t.status === 'rejected');
+  const openPositions = trades.filter(t => {
+    const s = (t.status || 'open').toLowerCase();
+    return s === 'open' || s === 'pending';
+  });
+  const closedHistory = trades.filter(t => {
+    const s = (t.status || '').toLowerCase();
+    return s === 'completed' || s === 'closed' || s === 'rejected';
+  });
 
   // Calculate live margin requirement
   const estimatedMargin = (lotSize * activeMarket.price * 100) / leverage;

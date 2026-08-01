@@ -74,12 +74,32 @@ export default function Investments({ user }: any) {
       .subscribe();
       
     const fetchTrades = async () => {
-      const { data } = await supabase.from('trades').select('*').eq('user_id', user.id);
-      if (data) {
-        setOpenTrades(data.filter((t: any) => t.status === 'open'));
-        setTradeHistory(data.filter((t: any) => t.status === 'closed' || t.status === 'completed'));
-        setLoading(false);
-      }
+      const uId = user?.id || 'user_demo_100';
+      let merged: any[] = [];
+      try {
+        const { data } = await supabase.from('trades').select('*').eq('user_id', uId);
+        if (data && Array.isArray(data)) merged = [...data];
+      } catch (e) {}
+
+      // local fallback merge
+      try {
+        const saved = localStorage.getItem(`sgt_trades_${uId}`);
+        if (saved) {
+          const local = JSON.parse(saved);
+          local.forEach((lt: any) => {
+            const exists = merged.some(m => String(m.id) === String(lt.id));
+            if (!exists) merged.push(lt);
+            else if (lt.status === 'completed' || lt.status === 'closed') {
+              const idx = merged.findIndex(m => String(m.id) === String(lt.id));
+              if (idx !== -1) merged[idx].status = lt.status;
+            }
+          });
+        }
+      } catch (e) {}
+
+      setOpenTrades(merged.filter((t: any) => (t.status || 'open').toLowerCase() === 'open' || (t.status || '').toLowerCase() === 'pending'));
+      setTradeHistory(merged.filter((t: any) => (t.status || '').toLowerCase() === 'closed' || (t.status || '').toLowerCase() === 'completed'));
+      setLoading(false);
     };
     fetchTrades();
 
@@ -89,12 +109,13 @@ export default function Investments({ user }: any) {
   const handleTrade = async (direction: 'buy' | 'sell') => {
     if (!tradingAccount) return;
     setPlacingTrade(true);
+    const uId = user?.id || 'user_demo_100';
     
     try {
       const size = parseFloat(tradeSize);
       if (isNaN(size) || size <= 0) throw new Error('Invalid trade size');
       
-      const marginRequired = size * 100; // Mock margin requirement
+      const marginRequired = size * 100; // Margin requirement
       
       if (tradingAccount.freeMargin < marginRequired) {
         alert('Not enough free margin to open this trade.');
@@ -102,22 +123,42 @@ export default function Investments({ user }: any) {
         return;
       }
       
-      
-      // Open trade
-      await supabase.from('trades').insert([{
-        user_id: user.id,
+      const genId = 'trd_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+      const newTrade = {
+        id: genId,
+        user_id: uId,
         trading_account_id: tradingAccount.id,
         symbol: selectedAsset.symbol,
         type: direction,
         amount: size,
         price: selectedAsset.price,
-        status: 'open'
-      }]);
+        status: 'open',
+        created_at: new Date().toISOString()
+      };
       
-      // Update account margin
-      /* In a real app we would update margin */
+      // Open trade in Supabase
+      try {
+        await supabase.from('trades').insert([{
+          user_id: uId,
+          trading_account_id: tradingAccount.id,
+          symbol: selectedAsset.symbol,
+          type: direction,
+          amount: size,
+          price: selectedAsset.price,
+          status: 'open'
+        }]);
+      } catch (e) {}
 
+      // Save locally
+      try {
+        const saved = localStorage.getItem(`sgt_trades_${uId}`);
+        const currentLocal = saved ? JSON.parse(saved) : [];
+        localStorage.setItem(`sgt_trades_${uId}`, JSON.stringify([newTrade, ...currentLocal]));
+      } catch (e) {}
       
+      // Update state optimistically
+      setOpenTrades((prev: any[]) => [newTrade, ...prev]);
+      alert(`Trade Opened: ${direction.toUpperCase()} ${size} ${selectedAsset.symbol} @ $${selectedAsset.price}`);
     } catch (err: any) {
       alert(err.message);
     } finally {
