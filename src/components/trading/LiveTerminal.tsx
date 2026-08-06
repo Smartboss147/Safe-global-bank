@@ -1,15 +1,13 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
-import { INITIAL_MARKETS, MarketInstrument, generateCandlesForSymbol } from './mockMarketData';
+import { INITIAL_MARKETS, MarketInstrument } from './mockMarketData';
 import { 
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts';
 import { 
-  ArrowUpRight, ArrowDownRight, Settings, List, BarChart2, Briefcase, Clock,
+  ArrowUpRight, ArrowDownRight, Settings, List, BarChart2, Briefcase, Clock, 
   Search, Plus, Minus, X, Info, TrendingUp, TrendingDown, Star
 } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 interface LiveTerminalProps {
   user: any;
@@ -18,10 +16,7 @@ interface LiveTerminalProps {
 }
 
 export default function LiveTerminal({ user, account, isDarkMode = true }: LiveTerminalProps) {
-  // Mobile Tabs
   const [mobileTab, setMobileTab] = useState<'quotes' | 'chart' | 'trade' | 'history' | 'settings'>('quotes');
-
-  // Markets & Live Pricing
   const [markets, setMarkets] = useState<MarketInstrument[]>(INITIAL_MARKETS);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('XAU/USD');
   const [searchQuery, setSearchQuery] = useState('');
@@ -29,232 +24,287 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
   const [favorites, setFavorites] = useState<string[]>(['EUR/USD', 'XAU/USD', 'BTC/USD']);
   const [showSearch, setShowSearch] = useState(false);
   
-  // Trades & Open Positions State
   const [trades, setTrades] = useState<any[]>([]);
   const [activeHistoryTab, setActiveHistoryTab] = useState<'positions' | 'orders' | 'deals'>('positions');
   const [selectedTrade, setSelectedTrade] = useState<any | null>(null);
-
-  // Order Window State
+  
   const [isOrderWindowOpen, setIsOrderWindowOpen] = useState(false);
-  const [orderType, setOrderType] = useState<'Market Execution' | 'Buy Limit' | 'Sell Limit' | 'Buy Stop' | 'Sell Stop'>('Market Execution');
+  const [orderType, setOrderType] = useState<'Market Execution' | 'Buy Limit' | 'Sell Limit'>('Market Execution');
   const [lotSize, setLotSize] = useState<number>(1.00);
   const [stopLoss, setStopLoss] = useState<string>('');
   const [takeProfit, setTakeProfit] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Chart State
+  
   const [timeframe, setTimeframe] = useState<string>('M5');
   const [candles, setCandles] = useState<any[]>([]);
-
-  // Flash state for Quotes
   const [flashingSymbols, setFlashingSymbols] = useState<Record<string, 'up' | 'down'>>({});
+  
+  const tradesRef = useRef(trades);
+  tradesRef.current = trades;
 
-  const toggleFavorite = (e: any, symbol: string) => {
-    e.stopPropagation();
-    if (favorites.includes(symbol)) {
-      setFavorites(favorites.filter(f => f !== symbol));
-    } else {
-      setFavorites([...favorites, symbol]);
-    }
-  };
-
-  const activeMarket = useMemo(() => markets.find(m => m.symbol === selectedSymbol) || markets[0], [markets, selectedSymbol]);
-
-  // Initial Data Fetch
+  // Real-time market tick simulation
   useEffect(() => {
-    fetchTrades();
-  }, [user]);
+    const interval = setInterval(() => {
+      setMarkets(prev => {
+        const next = [...prev];
+        const flashes: Record<string, 'up' | 'down'> = {};
+        
+        for (let i = 0; i < next.length; i++) {
+          if (Math.random() > 0.7) {
+            const m = { ...next[i] };
+            const volatility = m.price * 0.0001;
+            const change = (Math.random() - 0.5) * volatility;
+            const newPrice = m.price + change;
+            
+            flashes[m.symbol] = change > 0 ? 'up' : 'down';
+            m.price = newPrice;
+            
+            // Adjust bid/ask keeping spread
+            const spreadAmt = m.price * (m.spread / 10000);
+            m.bid = m.price - spreadAmt / 2;
+            m.ask = m.price + spreadAmt / 2;
+            
+            next[i] = m;
+          }
+        }
+        setFlashingSymbols(flashes);
+        
+        // SL/TP Check
+        checkSlTp(next);
+        
+        return next;
+      });
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
-  // Helper to load local trades
-  const getLocalTrades = (uId: string) => {
-    try {
-      const saved = localStorage.getItem(`sgt_trades_${uId}`);
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  };
+  const checkSlTp = useCallback((currentMarkets: MarketInstrument[]) => {
+    const currentTrades = tradesRef.current;
+    if (!currentTrades || currentTrades.length === 0) return;
+    
+    currentTrades.forEach(t => {
+      if (t.status !== 'OPEN') return;
+      
+      const m = currentMarkets.find(x => x.symbol === t.symbol);
+      if (!m) return;
+      
+      const currentPrice = t.type === 'buy' ? m.bid : m.ask;
+      
+      let shouldClose = false;
+      let closeReason = '';
+      
+      if (t.stop_loss) {
+        if ((t.type === 'buy' && currentPrice <= t.stop_loss) || (t.type === 'sell' && currentPrice >= t.stop_loss)) {
+          shouldClose = true;
+          closeReason = 'SL';
+        }
+      }
+      if (!shouldClose && t.take_profit) {
+        if ((t.type === 'buy' && currentPrice >= t.take_profit) || (t.type === 'sell' && currentPrice <= t.take_profit)) {
+          shouldClose = true;
+          closeReason = 'TP';
+        }
+      }
+      
+      if (shouldClose) {
+        handleClosePosition(t.id, currentPrice, closeReason);
+      }
+    });
+  }, []);
 
-  const saveLocalTrades = (uId: string, tradesList: any[]) => {
-    try {
-      localStorage.setItem(`sgt_trades_${uId}`, JSON.stringify(tradesList));
-    } catch (e) {}
-  };
+  // Clear flashes
+  useEffect(() => {
+    const to = setTimeout(() => setFlashingSymbols({}), 300);
+    return () => clearTimeout(to);
+  }, [flashingSymbols]);
 
   const fetchTrades = useCallback(async () => {
-    const currentUserId = user?.id || user?.uid || 'user_demo_100';
+    const currentUserId = user?.id || user?.uid;
+    if (!currentUserId) return;
     try {
-      const { data, error } = await supabase
-        .from('trades')
+      const { data: positions, error } = await supabase
+        .from('trading_positions')
         .select('*')
         .eq('user_id', currentUserId)
-        .order('created_at', { ascending: false });
-
-      let merged: any[] = [];
-      if (!error && data && Array.isArray(data)) {
-        merged = [...data];
+        .order('opened_at', { ascending: false });
+        
+      if (!error && positions) {
+        const { data: historyMetadata } = await supabase
+          .from('trading_history')
+          .select('*')
+          .in('position_id', positions.map(p => p.id));
+          
+        const mappedTrades = positions.map(p => {
+          const meta = historyMetadata?.find(m => m.position_id === p.id && m.details?.type === 'sl_tp_meta');
+          return {
+             id: p.id,
+             symbol: p.asset_symbol,
+             type: p.type,
+             amount: p.amount,
+             open_price: p.entry_price,
+             close_price: p.close_price,
+             profit: p.profit_loss,
+             status: p.status === 'open' ? 'OPEN' : 'completed',
+             created_at: p.opened_at,
+             stop_loss: meta?.details?.stop_loss || null,
+             take_profit: meta?.details?.take_profit || null
+          }
+        });
+        setTrades(mappedTrades);
       }
-
-      const local = getLocalTrades(currentUserId);
-      local.forEach((lt: any) => {
-        const idx = merged.findIndex(m => String(m.id) === String(lt.id));
-        if (idx === -1) {
-          merged.push(lt);
-        } else if (lt.status === 'completed' || lt.status === 'closed') {
-          merged[idx].status = lt.status;
-        }
-      });
-
-      merged.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-      saveLocalTrades(currentUserId, merged);
-      setTrades(merged);
     } catch (e) {
-      setTrades(getLocalTrades(currentUserId));
+      console.error(e);
     }
   }, [user]);
 
-  // Real-time tick generator
   useEffect(() => {
-    const timer = setInterval(() => {
-      let updatedActivePrice: number | null = null;
-      const newFlashes: Record<string, 'up' | 'down'> = {};
+    fetchTrades();
+  }, [fetchTrades]);
 
-      setMarkets(prev =>
-        prev.map(m => {
-          const delta = (Math.random() - 0.49) * (m.price * 0.0015);
-          const newPrice = Math.max(0.0001, m.price + delta);
-          const formattedPrice = Number(newPrice.toFixed(m.price > 100 ? 2 : 5));
-          
-          if (formattedPrice > m.price) newFlashes[m.symbol] = 'up';
-          else if (formattedPrice < m.price) newFlashes[m.symbol] = 'down';
-
-          if (m.symbol === selectedSymbol) {
-            updatedActivePrice = formattedPrice;
-          }
-          const newBid = newPrice - (m.spread * 0.0001);
-          const newAsk = newPrice + (m.spread * 0.0001);
-          return {
-            ...m,
-            price: formattedPrice,
-            bid: Number(newBid.toFixed(m.price > 100 ? 2 : 5)),
-            ask: Number(newAsk.toFixed(m.price > 100 ? 2 : 5)),
-            changePercent: m.changePercent + (delta / m.price * 100)
-          };
-        })
-      );
-
-      setFlashingSymbols(newFlashes);
-      setTimeout(() => setFlashingSymbols({}), 500); // clear flash
-
-      if (updatedActivePrice !== null) {
-        const tickPrice = updatedActivePrice;
-        setCandles(cPrev => {
-          if (!cPrev || cPrev.length === 0) return cPrev;
-          const lastCandle = { ...cPrev[cPrev.length - 1] };
-          lastCandle.close = tickPrice;
-          lastCandle.high = Math.max(lastCandle.high, tickPrice);
-          lastCandle.low = Math.min(lastCandle.low, tickPrice);
-          lastCandle.isUp = lastCandle.close >= lastCandle.open;
-          lastCandle.openClose = [Math.min(lastCandle.open, lastCandle.close), Math.max(lastCandle.open, lastCandle.close)];
-          return [...cPrev.slice(0, cPrev.length - 1), lastCandle];
-        });
-      }
-    }, 1500);
-    return () => clearInterval(timer);
-  }, [selectedSymbol]);
-
+  // Generate dynamic candles
   useEffect(() => {
-    setCandles(generateCandlesForSymbol(selectedSymbol, 50));
-  }, [selectedSymbol, timeframe]);
+    const activeMarket = markets.find(m => m.symbol === selectedSymbol) || markets[0];
+    const basePrice = activeMarket.price;
+    const newCandles = [];
+    let current = basePrice * 0.94;
+    const now = new Date();
+    for (let i = 20; i >= 0; i--) {
+      const timeStr = new Date(now.getTime() - i * 300000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const deltaPercent = (Math.random() - 0.47) * 0.005;
+      const open = current;
+      const close = open * (1 + deltaPercent);
+      const high = Math.max(open, close) * (1 + Math.random() * 0.002);
+      const low = Math.min(open, close) * (1 - Math.random() * 0.002);
+      current = close;
+      newCandles.push({
+        time: timeStr,
+        open: Number(open.toFixed(basePrice > 100 ? 2 : 4)),
+        close: Number(close.toFixed(basePrice > 100 ? 2 : 4)),
+        high: Number(high.toFixed(basePrice > 100 ? 2 : 4)),
+        low: Number(low.toFixed(basePrice > 100 ? 2 : 4)),
+        isUp: close >= open,
+        openClose: [Math.min(open, close), Math.max(open, close)]
+      });
+    }
+    // Append current live tick
+    newCandles[newCandles.length - 1].close = activeMarket.price;
+    if (activeMarket.price > newCandles[newCandles.length - 1].high) newCandles[newCandles.length - 1].high = activeMarket.price;
+    if (activeMarket.price < newCandles[newCandles.length - 1].low) newCandles[newCandles.length - 1].low = activeMarket.price;
+    newCandles[newCandles.length - 1].isUp = activeMarket.price >= newCandles[newCandles.length - 1].open;
+    newCandles[newCandles.length - 1].openClose = [Math.min(newCandles[newCandles.length - 1].open, activeMarket.price), Math.max(newCandles[newCandles.length - 1].open, activeMarket.price)];
+    
+    setCandles(newCandles);
+  }, [selectedSymbol, markets[0]?.price]); // Re-render chart roughly on some ticks, or just on symbol change for performance. To prevent heavy re-renders, we only depend on selectedSymbol
 
-
-  // Trading Engine
-  const openPositions = useMemo(() => trades.filter(t => (t.status || 'open').toLowerCase() === 'open'), [trades]);
-  const closedHistory = useMemo(() => trades.filter(t => ['completed', 'closed', 'rejected'].includes((t.status || '').toLowerCase())), [trades]);
+  const activeMarket = markets.find(m => m.symbol === selectedSymbol) || markets[0];
   
-  const balance = Number(account?.balance || 100000);
-  
-  // Live PnL calculation
-  const floatingPnL = useMemo(() => {
-    return openPositions.reduce((acc, t) => {
-      const inst = markets.find(m => m.symbol === (t.symbol || t.asset));
-      if (!inst) return acc;
-      const curPrice = t.type === 'buy' ? inst.bid : inst.ask;
-      const opPrice = t.price || curPrice;
-      const pnl = t.type === 'buy' ? (curPrice - opPrice) * (t.amount || 1) * 100 : (opPrice - curPrice) * (t.amount || 1) * 100;
-      return acc + pnl;
-    }, 0);
-  }, [openPositions, markets]);
-
-  const equity = balance + floatingPnL;
-  
-  const usedMargin = useMemo(() => {
-    return openPositions.reduce((acc, t) => {
-      const inst = markets.find(m => m.symbol === (t.symbol || t.asset));
-      if (!inst) return acc;
-      // Mock margin calculation
-      const marginReq = ((t.amount || 1) * inst.price * 100) / (t.leverage || 100);
-      return acc + marginReq;
-    }, 0);
-  }, [openPositions, markets]);
-
-  const freeMargin = equity - usedMargin;
-  const marginLevel = usedMargin > 0 ? (equity / usedMargin) * 100 : 0;
-
   const handleExecuteTrade = async (type: 'buy' | 'sell') => {
-    const currentUserId = user?.id || user?.uid || 'user_demo_100';
-    if (lotSize <= 0) return;
+    const currentUserId = user?.id || user?.uid;
+    if (!currentUserId || lotSize <= 0) return;
 
     setIsSubmitting(true);
     const orderPrice = type === 'buy' ? activeMarket.ask : activeMarket.bid;
-    const generatedId = 'trd_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
 
-    const dbPayload = {
-      user_id: currentUserId,
-      trading_account_id: account?.id || null,
-      symbol: activeMarket.symbol,
-      type,
-      amount: lotSize,
-      price: orderPrice,
-      leverage: 100, // Fixed for simplicity
-      stop_loss: stopLoss ? Number(stopLoss) : null,
-      take_profit: takeProfit ? Number(takeProfit) : null,
-      status: 'open',
-      created_at: new Date().toISOString()
-    };
-
-    let insertedTrade: any = null;
     try {
-      const { data, error } = await supabase.from('trades').insert([dbPayload]).select().single();
-      if (!error && data) insertedTrade = data;
-    } catch (err) {}
+      const { data: posData, error: posError } = await supabase.from('trading_positions').insert([{
+        user_id: currentUserId,
+        asset_symbol: activeMarket.symbol,
+        type: type,
+        amount: lotSize,
+        entry_price: orderPrice,
+        leverage: 100,
+        status: 'open'
+      }]).select().single();
 
-    if (!insertedTrade) insertedTrade = { id: generatedId, ...dbPayload };
-
-    const updatedLocal = [insertedTrade, ...getLocalTrades(currentUserId)];
-    saveLocalTrades(currentUserId, updatedLocal);
-    setTrades(prev => [insertedTrade, ...prev]);
-
-    setIsSubmitting(false);
-    setIsOrderWindowOpen(false);
-    setMobileTab('trade');
+      if (posData && !posError) {
+        if (stopLoss || takeProfit) {
+           await supabase.from('trading_history').insert([{
+             user_id: currentUserId,
+             position_id: posData.id,
+             details: {
+               type: 'sl_tp_meta',
+               stop_loss: stopLoss ? Number(stopLoss) : null,
+               take_profit: takeProfit ? Number(takeProfit) : null
+             }
+           }]);
+        }
+        await fetchTrades();
+        setIsOrderWindowOpen(false);
+        setStopLoss('');
+        setTakeProfit('');
+      } else {
+        alert("Trade execution failed.");
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleClosePosition = async (tradeId: string) => {
-    const currentUserId = user?.id || user?.uid || 'user_demo_100';
-    try { await supabase.from('trades').update({ status: 'completed' }).eq('id', tradeId); } catch (e) {}
+  const handleClosePosition = async (tradeId: string, customPrice?: number, reason?: string) => {
+    const currentUserId = user?.id || user?.uid;
+    const tradeToClose = tradesRef.current.find(t => t.id === tradeId);
+    if (!tradeToClose || tradeToClose.status !== 'OPEN') return;
+    
+    const currentMarket = markets.find(m => m.symbol === tradeToClose.symbol);
+    const clPrice = customPrice || (currentMarket ? (tradeToClose.type === 'buy' ? currentMarket.bid : currentMarket.ask) : tradeToClose.open_price);
+    const pnl = tradeToClose.type === 'buy' ? (clPrice - tradeToClose.open_price) * tradeToClose.amount * 100 : (tradeToClose.open_price - clPrice) * tradeToClose.amount * 100;
 
-    const updatedLocal = getLocalTrades(currentUserId).map((t: any) => String(t.id) === String(tradeId) ? { ...t, status: 'completed' } : t);
-    saveLocalTrades(currentUserId, updatedLocal);
-    setTrades(prev => prev.map(t => String(t.id) === String(tradeId) ? { ...t, status: 'completed' } : t));
+    // Optimistic update
+    setTrades(prev => prev.map(t => t.id === tradeId ? { ...t, status: 'completed', close_price: clPrice, profit: pnl } : t));
+
+    try { 
+      await supabase.from('trading_positions').update({ 
+        status: 'closed',
+        close_price: clPrice,
+        profit_loss: pnl,
+        closed_at: new Date().toISOString()
+      }).eq('id', tradeId); 
+      
+      await supabase.from('trading_history').insert([{
+         user_id: currentUserId,
+         position_id: tradeId,
+         details: {
+           type: 'close_event',
+           reason: reason || 'manual',
+           close_price: clPrice,
+           pnl: pnl
+         }
+      }]);
+
+      const { data: accData } = await supabase.from('accounts').select('balance').eq('user_id', currentUserId).single();
+      if (accData) {
+        await supabase.from('accounts').update({ balance: accData.balance + pnl }).eq('user_id', currentUserId);
+      }
+      
+      await fetchTrades();
+    } catch (e) {
+      console.error(e);
+    }
     setSelectedTrade(null);
   };
 
+  const openPositions = trades.filter(t => t.status === 'OPEN');
+  const closedHistory = trades.filter(t => t.status !== 'OPEN');
+  
+  const floatingPnl = openPositions.reduce((acc, t) => {
+    const m = markets.find(x => x.symbol === t.symbol);
+    if (!m) return acc;
+    const currentPrice = t.type === 'buy' ? m.bid : m.ask;
+    const pnl = t.type === 'buy' ? (currentPrice - t.open_price) * t.amount * 100 : (t.open_price - currentPrice) * t.amount * 100;
+    return acc + pnl;
+  }, 0);
 
-  // Custom Candlestick Shape
+  const balance = account?.balance || 0;
+  const equity = balance + floatingPnl;
+  const margin = openPositions.reduce((acc, t) => acc + (t.amount * 100), 0); // Simplified margin calc
+  const freeMargin = equity - margin;
+
   const CustomCandle = (props: any) => {
     const { x, y, width, height, isUp } = props;
-    const color = isUp ? '#00b8d4' : '#ff3b30'; // MT5 blue/red or green/red
+    const color = isUp ? '#00b8d4' : '#ff3b30';
     return (
       <g>
         <line x1={x + width / 2} y1={y - 8} x2={x + width / 2} y2={y + height + 8} stroke={color} strokeWidth={1} />
@@ -266,217 +316,169 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
   const formatPrice = (p: number) => p.toFixed(p > 10 ? 2 : 5);
 
   return (
-    <div className="flex flex-col h-screen bg-black text-white font-sans overflow-hidden">
-      
-      {/* HEADER */}
+    <div className="flex flex-col h-screen bg-black text-white font-sans overflow-hidden select-none">
       <div className="flex items-center justify-between px-4 py-3 bg-[#0a0a0a] border-b border-gray-800 shrink-0">
         <h1 className="text-lg font-semibold tracking-wide">
-          {mobileTab === 'quotes' && 'Quotes'}
-          {mobileTab === 'chart' && selectedSymbol}
-          {mobileTab === 'trade' && 'Trade'}
-          {mobileTab === 'history' && 'History'}
-          {mobileTab === 'settings' && 'Settings'}
+          {mobileTab === 'quotes' ? 'Quotes' : 
+           mobileTab === 'chart' ? activeMarket.symbol.replace('/', '') : 
+           mobileTab === 'trade' ? 'Trade' : 
+           mobileTab === 'history' ? 'History' : 'Settings'}
         </h1>
-        <div className="flex items-center gap-4">
-          {mobileTab === 'quotes' && (
-            <>
-              <button onClick={() => setShowSearch(!showSearch)}><Search size={20} className="text-blue-500" /></button>
-            </>
-          )}
-          {mobileTab === 'chart' && (
-            <div className="flex gap-4">
-              <span className="text-sm font-bold text-blue-500">{timeframe}</span>
-              <button onClick={() => setIsOrderWindowOpen(true)}><Plus size={22} className="text-blue-500" /></button>
-            </div>
-          )}
-          {mobileTab === 'trade' && (
-            <button onClick={() => setIsOrderWindowOpen(true)}><Plus size={22} className="text-blue-500" /></button>
-          )}
-        </div>
+        {mobileTab === 'quotes' && (
+          <div className="flex gap-4 text-blue-500">
+            <button onClick={() => setShowSearch(!showSearch)}><Plus size={22} /></button>
+          </div>
+        )}
       </div>
 
-      {/* CONTENT AREA */}
-      <div className="flex-1 overflow-y-auto bg-black pb-20 relative">
-        
-        {/* QUOTES SCREEN */}
+      <div className="flex-1 overflow-hidden relative">
         {mobileTab === 'quotes' && (
-          <div className="flex flex-col h-full">
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar p-2 bg-[#050505] border-b border-gray-900 shrink-0">
-              {['All', 'Favorites', 'Forex', 'Crypto', 'Indices', 'Metals', 'Stocks'].map(cat => (
-                <button 
-                  key={cat} 
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${selectedCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-900 text-gray-400'}`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
+          <div className="h-full flex flex-col bg-black">
             {showSearch && (
-              <div className="p-2 bg-[#050505] border-b border-gray-900 shrink-0">
+              <div className="p-2 bg-[#111] border-b border-gray-800">
                 <input 
                   type="text" 
-                  placeholder="Search symbol..." 
+                  placeholder="Enter symbol to search..." 
+                  className="w-full bg-[#222] text-white px-3 py-2 rounded outline-none"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-gray-900 text-white px-3 py-2 rounded text-sm outline-none"
+                  onChange={e => setSearchQuery(e.target.value)}
                 />
               </div>
             )}
-            <div className="divide-y divide-gray-900 flex-1 overflow-y-auto">
-            {markets.filter(m => {
-              const matchesCat = selectedCategory === 'All' ? true : 
-                                 selectedCategory === 'Favorites' ? favorites.includes(m.symbol) :
-                                 m.category === selectedCategory;
-              const matchesSearch = m.symbol.toLowerCase().includes(searchQuery.toLowerCase());
-              return matchesCat && matchesSearch;
-            }).map(m => {
-              const isUp = flashingSymbols[m.symbol] === 'up';
-              const isDown = flashingSymbols[m.symbol] === 'down';
-              const bgClass = isUp ? 'bg-blue-900/20' : isDown ? 'bg-red-900/20' : 'bg-transparent';
-              const textClass = isUp ? 'text-blue-500' : isDown ? 'text-red-500' : 'text-gray-200';
-              
-              // Split price for MT5 big numbers
-              const bidStr = m.bid.toFixed(m.price > 10 ? 2 : 5);
-              const askStr = m.ask.toFixed(m.price > 10 ? 2 : 5);
-              
-              return (
+            <div className="flex-1 overflow-y-auto">
+              {markets.filter(m => m.symbol.toLowerCase().includes(searchQuery.toLowerCase())).map(m => (
                 <div 
-                  key={m.symbol} 
-                  className={`p-3 flex justify-between transition-colors duration-200 ${bgClass}`}
+                  key={m.id} 
+                  className="px-4 py-3 border-b border-gray-900 flex justify-between items-center bg-black active:bg-gray-900 cursor-pointer"
                   onClick={() => { setSelectedSymbol(m.symbol); setMobileTab('chart'); }}
                 >
-                  <div className="flex flex-col w-1/3">
-                    <div className="flex items-center gap-1">
-                      <button onClick={(e) => toggleFavorite(e, m.symbol)}>
-                        <Star size={14} className={favorites.includes(m.symbol) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'} />
-                      </button>
-                      <span className="font-bold text-sm tracking-wide">{m.symbol.replace('/','')}</span>
+                  <div>
+                    <div className="font-bold text-base flex items-center gap-2">
+                      {m.symbol.replace('/', '')}
+                      {flashingSymbols[m.symbol] === 'up' && <span className="text-blue-500 text-xs">▲</span>}
+                      {flashingSymbols[m.symbol] === 'down' && <span className="text-red-500 text-xs">▼</span>}
                     </div>
-                    <div className="flex gap-2 text-[10px] text-gray-500 mt-1 ml-4">
-                      <span>{new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-                      <span>spread {m.spread}</span>
+                    <div className="text-xs text-gray-500 mt-0.5">{m.tradingHours === '24/7' ? '24/7' : '10:00 - 23:50'}</div>
+                  </div>
+                  <div className="flex items-center gap-6">
+                    <div className={`flex flex-col items-end transition-colors duration-300 ${flashingSymbols[m.symbol] === 'up' ? 'text-blue-500' : flashingSymbols[m.symbol] === 'down' ? 'text-red-500' : 'text-gray-200'}`}>
+                      <span className="font-mono text-sm">{formatPrice(m.bid)}</span>
+                      <span className="text-[10px] text-gray-500">L: {formatPrice(m.low24h)}</span>
                     </div>
-                  </div>
-                  
-                  <div className={`flex flex-col items-end w-1/3 ${textClass}`}>
-                    <span className="font-mono text-xl tracking-tighter">
-                      {bidStr.slice(0, -2)}<span className="text-2xl font-bold">{bidStr.slice(-2,-1)}</span><span className="text-sm align-top">{bidStr.slice(-1)}</span>
-                    </span>
-                    <span className="text-[10px] text-gray-500">L: {formatPrice(m.price * 0.998)}</span>
-                  </div>
-
-                  <div className={`flex flex-col items-end w-1/3 ${textClass}`}>
-                    <span className="font-mono text-xl tracking-tighter">
-                      {askStr.slice(0, -2)}<span className="text-2xl font-bold">{askStr.slice(-2,-1)}</span><span className="text-sm align-top">{askStr.slice(-1)}</span>
-                    </span>
-                    <span className="text-[10px] text-gray-500">H: {formatPrice(m.price * 1.002)}</span>
+                    <div className={`flex flex-col items-end transition-colors duration-300 ${flashingSymbols[m.symbol] === 'up' ? 'text-blue-500' : flashingSymbols[m.symbol] === 'down' ? 'text-red-500' : 'text-gray-200'}`}>
+                      <span className="font-mono text-sm">{formatPrice(m.ask)}</span>
+                      <span className="text-[10px] text-gray-500">H: {formatPrice(m.high24h)}</span>
+                    </div>
                   </div>
                 </div>
-              );
-            })}
+              ))}
             </div>
           </div>
         )}
 
-        {/* CHART SCREEN */}
         {mobileTab === 'chart' && (
-          <div className="w-full h-full flex flex-col">
-            <div className="p-2 text-xs flex gap-4 text-gray-400 bg-[#050505]">
-              <span>{activeMarket.symbol.replace('/','')} <span className="text-white">▼</span></span>
-              <span>{timeframe}</span>
-              <span className="text-white flex-1">{activeMarket.name}</span>
+          <div className="flex flex-col h-full bg-black relative">
+            <div className="flex gap-4 px-4 py-2 border-b border-gray-800 bg-[#0a0a0a] text-sm overflow-x-auto shrink-0 no-scrollbar">
+              {['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1'].map(tf => (
+                <button 
+                  key={tf} 
+                  onClick={() => setTimeframe(tf)}
+                  className={`font-semibold shrink-0 ${timeframe === tf ? 'text-blue-500' : 'text-gray-500'}`}
+                >
+                  {tf}
+                </button>
+              ))}
             </div>
             
-            <div className="flex-1 w-full bg-black relative">
+            <div className="flex-1 w-full p-2 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={candles} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={true} />
-                  <XAxis dataKey="time" stroke="#555" tick={{fill: '#555', fontSize: 10}} minTickGap={30} />
-                  <YAxis domain={['auto', 'auto']} stroke="#555" tick={{fill: '#555', fontSize: 10}} orientation="right" />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#111', border: '1px solid #333', fontSize: '10px' }}
-                    itemStyle={{ color: '#fff' }}
-                    labelStyle={{ color: '#888' }}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
+                  <XAxis dataKey="time" stroke="#444" tick={{fill: '#666', fontSize: 10}} minTickGap={30} />
+                  <YAxis domain={['auto', 'auto']} stroke="#444" tick={{fill: '#666', fontSize: 10}} orientation="right" />
                   <Bar dataKey="openClose" shape={<CustomCandle />} isAnimationActive={false} />
                   <ReferenceLine y={activeMarket.price} stroke="#00b8d4" strokeDasharray="3 3" />
-                  <ReferenceLine y={activeMarket.ask} stroke="#ff3b30" strokeDasharray="3 3" />
                 </BarChart>
               </ResponsiveContainer>
-              
-              {/* Fake Indicator Panel */}
-              <div className="h-1/3 border-t border-gray-800 bg-[#050505]">
-                <span className="text-[10px] text-gray-500 p-2 absolute">RSI(14) 38.34</span>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={candles.map(c => ({ time: c.time, rsi: Math.random() * 40 + 30 }))} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#222" vertical={false} />
-                    <YAxis domain={[0, 100]} stroke="#555" tick={{fill: '#555', fontSize: 10}} orientation="right" ticks={[0, 30, 70, 100]} />
-                    <Line type="monotone" dataKey="rsi" stroke="#00b8d4" strokeWidth={1} dot={false} isAnimationActive={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 bg-[#00b8d4] text-black text-xs font-mono px-1 py-0.5 rounded-l shadow">
+                {formatPrice(activeMarket.price)}
               </div>
+            </div>
+            
+            <div className="absolute bottom-4 left-0 right-0 px-4 flex justify-between gap-4">
+               <button 
+                 onClick={() => { setOrderType('Market Execution'); setIsOrderWindowOpen(true); }}
+                 className="flex-1 bg-[#111] bg-opacity-80 backdrop-blur border border-gray-700 text-white font-bold py-3 rounded shadow-lg text-sm"
+               >
+                 Trade
+               </button>
             </div>
           </div>
         )}
 
-        {/* TRADE SCREEN */}
         {mobileTab === 'trade' && (
           <div className="w-full h-full flex flex-col bg-black">
-            <div className="p-4 flex flex-col items-center border-b border-gray-900 pb-6">
-              <span className={`text-3xl font-mono tracking-tight font-semibold ${floatingPnL >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
-                {floatingPnL >= 0 ? '' : '-'}${Math.abs(floatingPnL).toFixed(2)} USD
-              </span>
-            </div>
-            
-            <div className="px-4 py-2 space-y-1 text-sm bg-[#050505] border-b border-gray-900">
-              <div className="flex justify-between text-gray-300"><span>Balance:</span><span className="font-mono">{balance.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-300"><span>Equity:</span><span className="font-mono">{equity.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-300"><span>Margin:</span><span className="font-mono">{usedMargin.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-300"><span>Free Margin:</span><span className="font-mono">{freeMargin.toFixed(2)}</span></div>
-              <div className="flex justify-between text-gray-300"><span>Margin Level (%):</span><span className="font-mono">{marginLevel.toFixed(2)}</span></div>
-            </div>
-
-            <div className="p-4 pb-1">
-              <div className="flex justify-between items-center text-sm font-semibold text-gray-400">
-                <span>Positions</span>
-                <span>•••</span>
+            <div className="bg-[#111] p-4 flex flex-col items-center justify-center border-b border-gray-800 shrink-0">
+              <div className="flex gap-8 text-center text-sm mb-4">
+                <div className="flex flex-col">
+                  <span className="text-gray-500 text-xs">Balance</span>
+                  <span className="font-mono font-bold text-gray-200">{balance.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-gray-500 text-xs">Equity</span>
+                  <span className="font-mono font-bold text-gray-200">{equity.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-gray-500 text-xs">Margin</span>
+                  <span className="font-mono font-bold text-gray-200">{margin.toFixed(2)}</span>
+                </div>
+              </div>
+              <div className="flex gap-8 text-center text-sm">
+                <div className="flex flex-col">
+                  <span className="text-gray-500 text-xs">Free margin</span>
+                  <span className="font-mono font-bold text-gray-200">{freeMargin.toFixed(2)}</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-gray-500 text-xs">Margin level</span>
+                  <span className="font-mono font-bold text-gray-200">{margin > 0 ? ((equity/margin)*100).toFixed(2) : '0.00'}%</span>
+                </div>
               </div>
             </div>
 
+            <div className="flex px-4 py-2 bg-[#0a0a0a] border-b border-gray-800">
+              <span className="font-bold text-gray-300">Positions</span>
+            </div>
             <div className="flex-1 overflow-y-auto divide-y divide-gray-900">
               {openPositions.length === 0 ? (
-                <div className="text-center p-10 text-gray-600 text-sm">No open positions</div>
+                <div className="p-8 text-center text-gray-600 text-sm">No open positions</div>
               ) : (
                 openPositions.map(t => {
-                  const inst = markets.find(m => m.symbol === (t.symbol || t.asset)) || activeMarket;
-                  const curPrice = t.type === 'buy' ? inst.bid : inst.ask;
-                  const opPrice = t.price || curPrice;
-                  const pnl = t.type === 'buy' ? (curPrice - opPrice) * (t.amount || 1) * 100 : (opPrice - curPrice) * (t.amount || 1) * 100;
-                  const isSelected = selectedTrade?.id === t.id;
-
+                  const m = markets.find(x => x.symbol === t.symbol);
+                  const currentPrice = m ? (t.type === 'buy' ? m.bid : m.ask) : t.open_price;
+                  const pnl = t.type === 'buy' ? (currentPrice - t.open_price) * t.amount * 100 : (t.open_price - currentPrice) * t.amount * 100;
+                  const isSelected = selectedTrade === t.id;
+                  
                   return (
-                    <div key={t.id} className="flex flex-col transition-colors">
+                    <div key={t.id} className="flex flex-col bg-black">
                       <div 
-                        className="p-4 flex justify-between items-center active:bg-gray-900"
-                        onClick={() => setSelectedTrade(isSelected ? null : t)}
+                        className="p-4 flex justify-between cursor-pointer"
+                        onClick={() => setSelectedTrade(isSelected ? null : t.id)}
                       >
                         <div>
                           <div className="flex items-baseline gap-1">
-                            <span className="font-bold text-sm tracking-wide">{t.symbol?.replace('/','') || 'XAUUSD'}</span>
+                            <span className="font-bold text-base tracking-tight">{t.symbol?.replace('/','')}</span>
                             <span className={`text-xs ${t.type === 'buy' ? 'text-blue-500' : 'text-red-500'}`}>{t.type}</span>
-                            <span className="text-xs text-blue-500">{t.amount}</span>
+                            <span className="text-xs text-gray-400">{t.amount}</span>
                           </div>
-                          <div className="text-xs text-gray-500 mt-0.5 font-mono">
-                            {formatPrice(opPrice)} → {formatPrice(curPrice)}
+                          <div className="text-xs text-gray-500 font-mono mt-1">
+                            {formatPrice(t.open_price)} → {formatPrice(currentPrice)}
                           </div>
                         </div>
                         <div className={`font-mono text-lg ${pnl >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
                           {pnl.toFixed(2)}
                         </div>
                       </div>
-
-                      {/* Expanded Trade Actions */}
+                      
                       {isSelected && (
                         <div className="bg-[#111] p-3 flex gap-2 justify-between border-t border-gray-800">
                           <button 
@@ -485,9 +487,6 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
                           >
                             Close position
                           </button>
-                          <button className="flex-1 py-2 rounded bg-gray-700 text-white font-semibold text-sm">Modify</button>
-                          <button className="flex-1 py-2 rounded bg-gray-700 text-white font-semibold text-sm">Trade</button>
-                          <button className="flex-1 py-2 rounded bg-gray-700 text-white font-semibold text-sm">Chart</button>
                         </div>
                       )}
                     </div>
@@ -498,7 +497,6 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
           </div>
         )}
 
-        {/* HISTORY SCREEN */}
         {mobileTab === 'history' && (
           <div className="w-full h-full flex flex-col bg-black">
             <div className="flex bg-[#111] border-b border-gray-800 text-sm">
@@ -506,22 +504,9 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
                 className={`flex-1 py-3 text-center ${activeHistoryTab === 'positions' ? 'text-blue-500 border-b-2 border-blue-500 font-semibold' : 'text-gray-400'}`}
                 onClick={() => setActiveHistoryTab('positions')}
               >Positions</button>
-              <button 
-                className={`flex-1 py-3 text-center ${activeHistoryTab === 'orders' ? 'text-blue-500 border-b-2 border-blue-500 font-semibold' : 'text-gray-400'}`}
-                onClick={() => setActiveHistoryTab('orders')}
-              >Orders</button>
-              <button 
-                className={`flex-1 py-3 text-center ${activeHistoryTab === 'deals' ? 'text-blue-500 border-b-2 border-blue-500 font-semibold' : 'text-gray-400'}`}
-                onClick={() => setActiveHistoryTab('deals')}
-              >Deals</button>
             </div>
-
             <div className="flex-1 overflow-y-auto divide-y divide-gray-900">
-              {closedHistory.map(t => {
-                 const opPrice = t.price || activeMarket.price;
-                 const clPrice = t.close_price || opPrice; // simplified
-                 const pnl = t.type === 'buy' ? (clPrice - opPrice) * (t.amount || 1) * 100 : (opPrice - clPrice) * (t.amount || 1) * 100;
-                 return (
+              {closedHistory.map(t => (
                   <div key={t.id} className="p-4 flex justify-between">
                     <div>
                       <div className="flex items-baseline gap-1">
@@ -534,30 +519,26 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className={`font-mono text-sm ${pnl >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
-                        {pnl.toFixed(2)}
+                      <div className={`font-mono text-sm ${t.profit >= 0 ? 'text-blue-500' : 'text-red-500'}`}>
+                        {t.profit?.toFixed(2)}
                       </div>
                       <div className="text-xs text-gray-500 font-mono">
-                        {formatPrice(opPrice)} → {formatPrice(clPrice)}
+                        {formatPrice(t.open_price)} → {formatPrice(t.close_price)}
                       </div>
                     </div>
                   </div>
-                 )
-              })}
+              ))}
             </div>
           </div>
         )}
-
       </div>
 
-      {/* BOTTOM NAV BAR */}
       <div className="flex justify-between items-center px-2 py-1 bg-[#111] border-t border-gray-900 pb-safe shrink-0 text-[10px]">
         {[
           { id: 'quotes', icon: List, label: 'Quotes' },
           { id: 'chart', icon: BarChart2, label: 'Chart' },
           { id: 'trade', icon: Briefcase, label: 'Trade' },
-          { id: 'history', icon: Clock, label: 'History' },
-          { id: 'settings', icon: Settings, label: 'Settings' }
+          { id: 'history', icon: Clock, label: 'History' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -572,7 +553,6 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
         ))}
       </div>
 
-      {/* NEW ORDER WINDOW MODAL */}
       {isOrderWindowOpen && (
         <div className="absolute inset-0 z-50 bg-black flex flex-col animation-slide-up">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800 bg-[#0a0a0a]">
@@ -588,27 +568,34 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
             <div className="text-center font-bold text-gray-300 border-b border-gray-800 pb-2 mx-4">{orderType}</div>
             
             <div className="flex justify-center items-center gap-6 text-xl">
-              <span className="text-blue-500">-0.1</span>
-              <span className="text-blue-500">-0.01</span>
+              <button onClick={() => setLotSize(p => Math.max(0.01, p - 0.1))} className="text-blue-500">-0.1</button>
+              <button onClick={() => setLotSize(p => Math.max(0.01, p - 0.01))} className="text-blue-500">-0.01</button>
               <span className="font-mono text-2xl w-20 text-center">{lotSize.toFixed(2)}</span>
-              <span className="text-blue-500">+0.01</span>
-              <span className="text-blue-500">+0.1</span>
+              <button onClick={() => setLotSize(p => p + 0.01)} className="text-blue-500">+0.01</button>
+              <button onClick={() => setLotSize(p => p + 0.1)} className="text-blue-500">+0.1</button>
             </div>
             
             <div className="flex justify-around items-center pt-4 border-t border-gray-800 px-8">
               <div className="flex flex-col items-center">
                 <span className="text-[10px] text-gray-500">Stop Loss</span>
-                <span className="text-2xl font-mono text-gray-600 border-b border-gray-800 pb-1">Not set</span>
+                <input 
+                   type="number" 
+                   value={stopLoss} 
+                   onChange={(e) => setStopLoss(e.target.value)} 
+                   placeholder="Not set"
+                   className="text-2xl font-mono text-gray-300 bg-transparent text-center border-b border-gray-800 pb-1 w-24 outline-none placeholder:text-gray-700" 
+                />
               </div>
               <div className="flex flex-col items-center">
                 <span className="text-[10px] text-gray-500">Take Profit</span>
-                <span className="text-2xl font-mono text-gray-600 border-b border-gray-800 pb-1">Not set</span>
+                <input 
+                   type="number" 
+                   value={takeProfit} 
+                   onChange={(e) => setTakeProfit(e.target.value)} 
+                   placeholder="Not set"
+                   className="text-2xl font-mono text-gray-300 bg-transparent text-center border-b border-gray-800 pb-1 w-24 outline-none placeholder:text-gray-700" 
+                />
               </div>
-            </div>
-
-            <div className="flex justify-between px-10 text-xs text-gray-500 pt-8">
-              <span>Deviation</span>
-              <span className="font-mono">0</span>
             </div>
           </div>
           
@@ -637,6 +624,8 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
         .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
         .animation-slide-up { animation: slideUp 0.3s ease-out; }
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
     </div>
   );
