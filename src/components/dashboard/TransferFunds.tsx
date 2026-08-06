@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { sendCryptoTransferEmail } from '../../services/cryptoEmailService';
 
 interface TransferFundsProps {
   user: any;
@@ -225,6 +226,23 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
           ? `Successfully transferred $${val.toFixed(2)} to ${recipient}.`
           : `Transfer request submitted and pending verification.`
       );
+
+      // Dispatch automated transfer email notification
+      if (user?.email) {
+        sendCryptoTransferEmail({
+          type: 'outgoing',
+          recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+          recipientEmail: user.email,
+          asset: currInfo.code || 'USD',
+          assetName: 'Bank Funds',
+          amount: val,
+          network: bankName || 'Safe Global Banking Network',
+          walletAddress: recipient,
+          status: txStatus === 'completed' ? 'Completed' : 'Pending Verification',
+          referenceId: referenceId,
+          updatedBalance: formatCurrencyAmount(newSenderBalance, currInfo, { includeCode: true })
+        }).catch(e => console.warn('Bank transfer email notification warning:', e));
+      }
 
       // Reset form
       setAmount('');

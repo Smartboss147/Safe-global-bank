@@ -17,14 +17,14 @@ export interface EmailAuditLogEntry {
 // In-memory set for client-side idempotency during session
 const processedTxRefs = new Set<string>();
 
-export async function sendCryptoTransferEmail(params: CryptoEmailParams): Promise<{ success: boolean; logId?: string; error?: string }> {
+export async function sendCryptoTransferEmail(params: CryptoEmailParams): Promise<{ success: boolean; logId?: string; error?: string; smtpSent?: boolean }> {
   const { referenceId, recipientEmail, type, asset, amount } = params;
 
   // 1. Idempotency Check: Prevent duplicate emails for the same completed transaction reference
   const idempotencyKey = `${referenceId}_${type}`;
   if (processedTxRefs.has(idempotencyKey)) {
     console.log(`[EmailService] Notification for ${idempotencyKey} already dispatched. Skipping duplicate.`);
-    return { success: true, error: 'Duplicate suppressed (already sent)' };
+    return { success: true, error: 'Duplicate suppressed (already sent)', smtpSent: false };
   }
 
   try {
@@ -39,7 +39,7 @@ export async function sendCryptoTransferEmail(params: CryptoEmailParams): Promis
     if (existingLog) {
       processedTxRefs.add(idempotencyKey);
       console.log(`[EmailService] Audit log exists for ${referenceId}. Skipping duplicate.`);
-      return { success: true, logId: existingLog.id, error: 'Duplicate suppressed' };
+      return { success: true, logId: existingLog.id, error: 'Duplicate suppressed', smtpSent: false };
     }
   } catch (err) {
     // Continue if table query fails or doesn't exist yet
@@ -51,6 +51,7 @@ export async function sendCryptoTransferEmail(params: CryptoEmailParams): Promis
 
   let deliveryStatus: 'SENT' | 'DELIVERED' | 'FAILED' = 'SENT';
   let deliveryError: string | undefined = undefined;
+  let isSmtpSent = false;
 
   // 3. Dispatch to backend API
   try {
@@ -66,12 +67,13 @@ export async function sendCryptoTransferEmail(params: CryptoEmailParams): Promis
       })
     });
 
+    const resData = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
       deliveryStatus = 'FAILED';
-      deliveryError = errData.error || `Server responded with status ${res.status}`;
+      deliveryError = resData.error || `Server responded with status ${res.status}`;
     } else {
-      deliveryStatus = 'DELIVERED';
+      isSmtpSent = !!resData.smtpSent;
+      deliveryStatus = isSmtpSent ? 'DELIVERED' : 'SENT';
     }
   } catch (err: any) {
     console.warn('[EmailService] Dispatch via backend server warning:', err);
@@ -91,7 +93,15 @@ export async function sendCryptoTransferEmail(params: CryptoEmailParams): Promis
     delivery_status: deliveryStatus,
     sent_at: new Date().toISOString(),
     error_message: deliveryError || null,
-    metadata: { network: params.network, walletAddress: params.walletAddress }
+    metadata: { 
+      network: params.network, 
+      walletAddress: params.walletAddress,
+      subject,
+      html,
+      recipientName: params.recipientName,
+      status: params.status,
+      updatedBalance: params.updatedBalance
+    }
   };
 
   try {
@@ -110,7 +120,7 @@ export async function sendCryptoTransferEmail(params: CryptoEmailParams): Promis
   processedTxRefs.add(idempotencyKey);
   saveLocalEmailAuditLog(logPayload);
 
-  return { success: deliveryStatus !== 'FAILED', logId, error: deliveryError };
+  return { success: deliveryStatus !== 'FAILED', logId, error: deliveryError, smtpSent: isSmtpSent };
 }
 
 // Local Storage Audit Log Fallback Helper

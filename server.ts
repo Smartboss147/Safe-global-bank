@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import nodemailer from "nodemailer";
 
 async function startServer() {
   const app = express();
@@ -158,26 +159,84 @@ app.post('/api/crypto/send-transfer-email', async (req, res) => {
     return res.status(400).json({ error: 'Recipient email and transaction reference ID are required.' });
   }
 
+  let emailSentReal = false;
+  let sendError: string | null = null;
+
+  // Try real SMTP email dispatch if SMTP credentials are present
+  let smtpHost = process.env.SMTP_HOST;
+  const smtpPort = Number(process.env.SMTP_PORT || 465);
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
+  const smtpFrom = process.env.SMTP_FROM || (smtpUser ? `"Safe Global Bank" <${smtpUser}>` : '"Safe Global Bank Crypto" <noreply@safeglobalbank.com>');
+
+  // Auto-detect Gmail if host not specified but user is gmail
+  if (!smtpHost && smtpUser && smtpUser.includes('@gmail.com')) {
+    smtpHost = 'smtp.gmail.com';
+  }
+
+  if (smtpHost && smtpUser && smtpPass) {
+    try {
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465, // true for 465, false for 587 or other ports
+        auth: {
+          user: smtpUser,
+          pass: smtpPass
+        },
+        tls: {
+          rejectUnauthorized: false
+        }
+      });
+
+      await transporter.sendMail({
+        from: smtpFrom,
+        to: recipientEmail,
+        subject: subject || `Transaction Receipt: Ref ${referenceId}`,
+        html: html
+      });
+
+      emailSentReal = true;
+      console.log(`[Server SMTP] Live email successfully dispatched via SMTP to ${recipientEmail} for Ref ${referenceId}`);
+    } catch (err: any) {
+      console.warn('[Server SMTP Error] Failed to send via SMTP:', err.message);
+      sendError = err.message;
+    }
+  } else {
+    console.log(`[Server SMTP Info] No SMTP_USER/SMTP_PASS configured. Email stored in in-app account history & audit log for ${recipientEmail}`);
+  }
+
   try {
-    // Log to Supabase email_audit_logs if available
+    // Log to Supabase email_audit_logs
     const logEntry = {
       recipient_email: recipientEmail,
       transaction_ref: referenceId,
       type: params?.type || 'crypto_transfer',
       asset: params?.asset || 'BTC',
       amount: params?.amount || 0,
-      delivery_status: 'DELIVERED',
+      delivery_status: emailSentReal ? 'DELIVERED' : 'SENT',
       sent_at: new Date().toISOString(),
-      metadata: { subject, params }
+      metadata: { subject, params, smtpSent: emailSentReal, sendError }
     };
 
     await supabaseAdmin.from('email_audit_logs').insert([logEntry]);
 
-    console.log(`[Server] Crypto transfer email dispatched to ${recipientEmail} for Ref ${referenceId}`);
-    return res.json({ success: true, message: `Email receipt dispatched to ${recipientEmail}` });
+    console.log(`[Server] Crypto transfer email logged for ${recipientEmail} (Ref: ${referenceId})`);
+    return res.json({ 
+      success: true, 
+      message: `Email receipt processed for ${recipientEmail}`,
+      smtpSent: emailSentReal,
+      deliveryStatus: emailSentReal ? 'DELIVERED' : 'SENT',
+      html
+    });
   } catch (err: any) {
     console.warn('[Server] Email logging notice:', err.message);
-    return res.json({ success: true, message: 'Email process completed with local fallback' });
+    return res.json({ 
+      success: true, 
+      message: 'Email process completed with local fallback', 
+      smtpSent: emailSentReal,
+      html 
+    });
   }
 });
 
