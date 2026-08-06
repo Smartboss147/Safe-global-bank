@@ -19,6 +19,7 @@ import Settings from './dashboard/Settings';
 import SecurityCenter from './dashboard/SecurityCenter';
 import CustomerSupport from './dashboard/CustomerSupport';
 import IRSRefund from './dashboard/IRSRefund';
+import ThemeToggle from './ThemeToggle';
 import { 
   Menu, Bell, Eye, EyeOff, Activity, CreditCard, LayoutGrid, 
   Send, Globe, Download, HandCoins, Receipt, HelpCircle, LogOut, 
@@ -193,28 +194,29 @@ export default function Dashboard({ user }: { user: any }) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto min-h-screen bg-gray-50/50 pb-24 relative overflow-hidden shadow-2xl">
+    <div className="max-w-2xl mx-auto min-h-screen bg-gray-50/50 dark:bg-slate-900 text-gray-900 dark:text-slate-100 pb-24 relative overflow-hidden shadow-2xl transition-colors duration-200">
       {/* Top Header */}
       <header className="px-5 py-4 flex items-center justify-between bg-transparent relative z-10">
         <div className="flex items-center gap-3">
-          <button className="p-2 -ml-2 rounded-full hover:bg-gray-100 transition" onClick={() => activeTab !== 'overview' ? setActiveTab('overview') : setIsMenuOpen(!isMenuOpen)}>
+          <button className="p-2 -ml-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition text-gray-700 dark:text-slate-200" onClick={() => activeTab !== 'overview' ? setActiveTab('overview') : setIsMenuOpen(!isMenuOpen)}>
             {activeTab !== 'overview' ? <ChevronLeft size={24} /> : <Menu size={24} />}
           </button>
           <div className="font-extrabold text-lg flex items-center gap-2 cursor-pointer" onClick={() => setActiveTab('overview')}>
-            <span className="bg-gradient-to-br from-blue-700 to-indigo-800 text-transparent bg-clip-text">SAFE</span>
-            <span className="text-gray-900">GLOBAL</span>
+            <span className="bg-gradient-to-br from-blue-700 to-indigo-800 dark:from-blue-400 dark:to-indigo-400 text-transparent bg-clip-text">SAFE</span>
+            <span className="text-gray-900 dark:text-white">GLOBAL</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <button className="relative p-2 rounded-full hover:bg-gray-100 transition text-gray-700" onClick={() => setShowNotifications(true)}>
+        <div className="flex items-center gap-3">
+          <ThemeToggle />
+          <button className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition text-gray-700 dark:text-slate-200" onClick={() => setShowNotifications(true)}>
             <Bell size={22} />
             {notifications.filter(n => !n.read).length > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-gray-50"></span>
+              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-gray-50 dark:border-slate-900"></span>
             )}
           </button>
           
           <div className="relative">
-            <button className="w-9 h-9 rounded-full bg-gray-200 overflow-hidden border-2 border-white shadow-sm hover:ring-2 hover:ring-blue-500 transition-all" onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}>
+            <button className="w-9 h-9 rounded-full bg-gray-200 dark:bg-slate-700 overflow-hidden border-2 border-white dark:border-slate-800 shadow-xs hover:ring-2 hover:ring-blue-500 transition-all" onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}>
               <img src={getUserPhotoURL(userData, user)} alt="Profile" className="w-full h-full object-cover" />
             </button>
             
@@ -226,22 +228,22 @@ export default function Dashboard({ user }: { user: any }) {
                     initial={{ opacity: 0, y: -10 }} 
                     animate={{ opacity: 1, y: 0 }} 
                     exit={{ opacity: 0, y: -10 }} 
-                    className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl z-50 border border-gray-100 py-2"
+                    className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 rounded-xl shadow-xl z-50 border border-gray-100 dark:border-slate-700/60 py-2"
                   >
-                    <div className="px-4 py-3 border-b border-gray-100">
-                      <p className="text-sm font-bold text-gray-900 truncate">{getUserDisplayName(userData, user)}</p>
-                      <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                    <div className="px-4 py-3 border-b border-gray-100 dark:border-slate-700/60">
+                      <p className="text-sm font-bold text-gray-900 dark:text-white truncate">{getUserDisplayName(userData, user)}</p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 truncate">{user?.email}</p>
                     </div>
                     <div className="py-1">
                       <button 
                         onClick={() => { setIsProfileDropdownOpen(false); handleAction('settings'); }} 
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
                       >
                         <SettingsIcon size={16} /> Profile Settings
                       </button>
                       <button 
                         onClick={() => { setIsProfileDropdownOpen(false); handleAction('logout'); }} 
-                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 font-bold"
+                        className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 font-bold"
                       >
                         <LogOut size={16} /> Sign Out
                       </button>
@@ -254,6 +256,7 @@ export default function Dashboard({ user }: { user: any }) {
 
         </div>
       </header>
+
 
       {/* Notifications Modal */}
       <AnimatePresence>

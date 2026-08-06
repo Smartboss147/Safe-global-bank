@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getLocalEmailAuditLogs } from '../services/cryptoEmailService';
+import ThemeToggle from './ThemeToggle';
 
 export default function AdminDashboard({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState('users'); // Default to Users tab like screenshot
@@ -17,6 +18,7 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [users, setUsers] = useState<any[]>([]);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [cryptoWallets, setCryptoWallets] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
   const [emailLogs, setEmailLogs] = useState<any[]>([]);
   const [cryptoTxs, setCryptoTxs] = useState<any[]>([]);
@@ -31,6 +33,8 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [walletActionType, setWalletActionType] = useState<'credit' | 'debit' | 'adjust'>('credit');
+  const [walletBalanceType, setWalletBalanceType] = useState<'main' | 'crypto' | 'trading'>('main');
+  const [walletCryptoAsset, setWalletCryptoAsset] = useState('USDT');
   const [walletAmount, setWalletAmount] = useState('');
   const [walletReason, setWalletReason] = useState('');
   const [adminRole, setAdminRole] = useState<'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT'>('SUPER_ADMIN');
@@ -89,6 +93,10 @@ export default function AdminDashboard({ user }: { user: any }) {
       // 2. Fetch accounts
       const { data: accountsData } = await supabase.from('accounts').select('*');
       if (accountsData) setAccounts(accountsData);
+
+      // 2.5 Fetch crypto wallets
+      const { data: cryptoWalletsData } = await supabase.from('crypto_wallets').select('*');
+      if (cryptoWalletsData) setCryptoWallets(cryptoWalletsData);
 
       // 3. Fetch transactions
       const { data: txData } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
@@ -256,6 +264,42 @@ export default function AdminDashboard({ user }: { user: any }) {
     }
   };
 
+  const handleCryptoUpdateBalance = async (targetUserId: string, balanceType: 'crypto' | 'trading', asset: string | null, newBalance: number, reason: string) => {
+    try {
+      console.log(`[Admin Wallet System Audit] Starting ${balanceType} balance update process for user: ${targetUserId}`);
+
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      
+      const res = await fetch('/api/admin/update-crypto-balance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          targetUserId,
+          balanceType,
+          asset,
+          newBalance,
+          reason
+        })
+      });
+
+      const apiJson = await res.json();
+      if (res.ok && apiJson.success) {
+        console.log('[Admin Wallet System Audit] Backend Admin API successfully persisted crypto/trading balance:', apiJson);
+        setMsg({ type: 'success', text: `${balanceType === 'crypto' ? asset : 'Trading'} wallet balance updated to ${newBalance} successfully.` });
+        setIsWalletModalOpen(false);
+      } else {
+        throw new Error(apiJson.error || 'Backend Admin API response error');
+      }
+    } catch (err: any) {
+      console.error("[Admin Wallet System Audit Error] Failed to update balance:", err);
+      setMsg({ type: 'error', text: `Error updating balance: ${err.message || 'Database update failed'}` });
+    }
+  };
+
   const handleUpdateBalance = async (accountId: string, newBalance: number, reason: string) => {
     const userCurrInfo = getCurrencyByCountry(selectedUser?.country);
     try {
@@ -310,8 +354,6 @@ export default function AdminDashboard({ user }: { user: any }) {
             account_number: targetAcc?.account_number || `ACC-${targetUserId.substring(0, 6).toUpperCase()}`,
             balance: newBalance,
             currency: userCurrInfo.code,
-            currency_code: userCurrInfo.code,
-            currency_symbol: userCurrInfo.symbol,
             account_type: 'checking',
             status: 'active'
           }], { onConflict: 'user_id' })
@@ -382,9 +424,7 @@ export default function AdminDashboard({ user }: { user: any }) {
             user_id: targetUserId,
             account_number: updateResult.account_number || `ACC-${targetUserId.substring(0, 6).toUpperCase()}`,
             balance: newBalance,
-            currency: userCurrInfo.code,
-            currency_code: userCurrInfo.code,
-            currency_symbol: userCurrInfo.symbol
+            currency: userCurrInfo.code
           }];
         }
         return prev;
@@ -457,7 +497,6 @@ export default function AdminDashboard({ user }: { user: any }) {
             accountUpdates: {
               status: statusField === 'status' || statusField === 'account_status' ? statusValue : undefined,
               currency: statusField === 'currency' || statusField === 'currency_code' ? statusValue : undefined,
-              currency_code: statusField === 'currency' || statusField === 'currency_code' ? statusValue : undefined,
               account_type: statusField === 'account_type' || statusField === 'accountType' ? statusValue : undefined
             },
             actionName,
@@ -481,7 +520,7 @@ export default function AdminDashboard({ user }: { user: any }) {
           await supabase.from('kyc_documents').update({ status: statusValue }).eq('user_id', userId);
         }
         if (statusField === 'currency' || statusField === 'currency_code') {
-          await supabase.from('accounts').update({ currency: statusValue, currency_code: statusValue }).eq('user_id', userId);
+          await supabase.from('accounts').update({ currency: statusValue }).eq('user_id', userId);
         }
         if (statusField === 'account_type' || statusField === 'accountType') {
           await supabase.from('accounts').update({ account_type: statusValue }).eq('user_id', userId);
@@ -702,26 +741,30 @@ export default function AdminDashboard({ user }: { user: any }) {
   const adminLastLogin = user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Active Session';
 
   return (
-    <div className="min-h-screen bg-[#0b0c10] text-gray-100 flex flex-col md:flex-row font-sans">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#0b0c10] text-slate-900 dark:text-gray-100 flex flex-col md:flex-row font-sans transition-colors duration-200">
       
       {/* MOBILE HEADER BAR */}
-      <div className="md:hidden bg-[#121319] border-b border-white/10 p-4 flex items-center justify-between sticky top-0 z-40">
+      <div className="md:hidden bg-white dark:bg-[#121319] border-b border-gray-200 dark:border-white/10 p-4 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-black flex items-center justify-center font-black text-sm shadow-md shadow-emerald-500/20">
             <ShieldCheck size={18} className="text-black" />
           </div>
           <div>
-            <h1 className="text-base font-black tracking-tight text-white">Safe Global Bank</h1>
-            <p className="text-[10px] font-mono text-gray-400 uppercase tracking-widest">ADMIN TERMINAL</p>
+            <h1 className="text-base font-black tracking-tight text-gray-900 dark:text-white">Safe Global Bank</h1>
+            <p className="text-[10px] font-mono text-gray-500 dark:text-gray-400 uppercase tracking-widest">ADMIN TERMINAL</p>
           </div>
         </div>
-        <button 
-          onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
-          className="p-2 text-gray-300 hover:text-white bg-white/5 rounded-xl border border-white/10"
-        >
-          {isMobileSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <button 
+            onClick={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+            className="p-2 text-gray-700 dark:text-gray-300 hover:text-black dark:hover:text-white bg-gray-100 dark:bg-white/5 rounded-xl border border-gray-200 dark:border-white/10"
+          >
+            {isMobileSidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
+        </div>
       </div>
+
 
       {/* LEFT SIDEBAR TERMINAL PANEL */}
       <aside className={`
@@ -853,6 +896,7 @@ export default function AdminDashboard({ user }: { user: any }) {
           </div>
 
           <div className="flex items-center gap-3">
+            <ThemeToggle showLabel />
             <select 
               value={adminRole} 
               onChange={(e) => setAdminRole(e.target.value as any)}
@@ -864,7 +908,7 @@ export default function AdminDashboard({ user }: { user: any }) {
             </select>
 
             <button 
-              onClick={fetchData}
+              onClick={() => fetchData(true)}
               className="flex items-center gap-2 bg-[#181a22] hover:bg-white/10 border border-white/10 text-gray-200 px-3.5 py-2 rounded-xl text-xs font-bold transition"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -1986,8 +2030,43 @@ export default function AdminDashboard({ user }: { user: any }) {
                 <p className="text-gray-400">User: <span className="font-bold text-white">{selectedUser.displayName || selectedUser.email}</span></p>
                 <p className="text-gray-400">Email: <span className="font-bold text-indigo-300">{selectedUser.email}</span></p>
                 <p className="text-gray-400">Account #: <span className="font-mono text-white">{selectedUser.account?.account_number || selectedUser.account?.accountNumber || 'ACC-100234'}</span></p>
-                <p className="text-gray-400">Current Balance: <span className="font-bold text-emerald-400">{formatCurrencyAmount(Number(selectedUser.account?.balance || 0), getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD'))}</span></p>
+                <p className="text-gray-400">
+                  Current Balance: <span className="font-bold text-emerald-400">
+                    {walletBalanceType === 'main' ? formatCurrencyAmount(Number(selectedUser.account?.balance || 0), getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD')) : 
+                     walletBalanceType === 'trading' ? `$${Number(cryptoWallets.find(w => w.user_id === selectedUser.id)?.trading_balance || 0).toFixed(2)}` :
+                     `${Number(cryptoWallets.find(w => w.user_id === selectedUser.id)?.balances?.[walletCryptoAsset] || 0)} ${walletCryptoAsset}`}
+                  </span>
+                </p>
               </div>
+
+              <div>
+                <label className="block font-bold text-gray-400 uppercase mb-1">Balance Type</label>
+                <select 
+                  value={walletBalanceType} 
+                  onChange={(e) => setWalletBalanceType(e.target.value as 'main' | 'crypto' | 'trading')}
+                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 mb-4"
+                >
+                  <option value="main">Main Balance</option>
+                  <option value="crypto">Crypto Balance</option>
+                  <option value="trading">Trading Balance</option>
+                </select>
+              </div>
+
+              {walletBalanceType === 'crypto' && (
+                <div>
+                  <label className="block font-bold text-gray-400 uppercase mb-1">Crypto Asset</label>
+                  <select 
+                    value={walletCryptoAsset} 
+                    onChange={(e) => setWalletCryptoAsset(e.target.value)}
+                    className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 mb-4"
+                  >
+                    <option value="USDT">USDT</option>
+                    <option value="BTC">BTC</option>
+                    <option value="ETH">ETH</option>
+                    <option value="SOL">SOL</option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block font-bold text-gray-400 uppercase mb-1">Adjustment Type</label>
@@ -2037,20 +2116,35 @@ export default function AdminDashboard({ user }: { user: any }) {
                     alert('Please provide a reason for the audit log');
                     return;
                   }
-                  const currentBal = Number(selectedUser.account?.balance || 0);
+
+                  let currentBal = 0;
+                  if (walletBalanceType === 'main') {
+                    currentBal = Number(selectedUser.account?.balance || 0);
+                  } else if (walletBalanceType === 'trading') {
+                    const wallet = cryptoWallets.find(w => w.user_id === selectedUser.id);
+                    currentBal = Number(wallet?.trading_balance || 0);
+                  } else if (walletBalanceType === 'crypto') {
+                    const wallet = cryptoWallets.find(w => w.user_id === selectedUser.id);
+                    currentBal = Number(wallet?.balances?.[walletCryptoAsset] || 0);
+                  }
+
                   let newBal = currentBal;
                   if (walletActionType === 'credit') newBal = currentBal + amt;
                   else if (walletActionType === 'debit') {
                     newBal = currentBal - amt;
                     if (newBal < 0) {
-                      if (!confirm(`Warning: Debiting ${formatCurrencyAmount(amt, getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD'))} will set account balance below zero (to -${formatCurrencyAmount(Math.abs(newBal), getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD'))}). Do you wish to proceed?`)) {
+                      if (!confirm(`Warning: Debiting this amount will set the balance below zero (to ${newBal}). Do you wish to proceed?`)) {
                         return;
                       }
                     }
                   }
                   else if (walletActionType === 'adjust') newBal = amt;
 
-                  handleUpdateBalance(selectedUser.account?.id || `acc_${selectedUser.id}`, newBal, walletReason.trim());
+                  if (walletBalanceType === 'main') {
+                    handleUpdateBalance(selectedUser.account?.id || `acc_${selectedUser.id}`, newBal, walletReason.trim());
+                  } else {
+                    handleCryptoUpdateBalance(selectedUser.id, walletBalanceType, walletCryptoAsset, newBal, walletReason.trim());
+                  }
                 }}
                 className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-900/20 transition active:scale-[0.99]"
               >

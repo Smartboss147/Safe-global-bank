@@ -223,8 +223,6 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
       account_number: initialAccNum,
       balance: initialBalance,
       currency: assignedCurrencyCode,
-      currency_code: assignedCurrencyCode,
-      currency_symbol: assignedCurrencySymbol,
       account_type: initialAccType,
       status: 'active'
     };

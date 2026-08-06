@@ -146,7 +146,6 @@ app.post('/api/admin/update-user', verifyAdmin, async (req, res) => {
       if (updates?.status) accFields.status = updates.status;
       if (updates?.currency_code || updates?.currency) {
         accFields.currency = updates.currency_code || updates.currency;
-        accFields.currency_code = updates.currency_code || updates.currency;
       }
       if (updates?.account_type) accFields.account_type = updates.account_type;
       if (updates?.balance !== undefined) accFields.balance = updates.balance;
@@ -344,6 +343,113 @@ app.post('/api/admin/update-balance', verifyAdmin, async (req, res) => {
     res.json({ success: true, newBalance, account: updatedAcc });
   } catch (err: any) {
     console.error('[Server Admin API Error] update-balance exception:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/update-crypto-balance', verifyAdmin, async (req, res) => {
+  const { targetUserId, balanceType, asset, newBalance, reason } = req.body;
+  if (!targetUserId || newBalance === undefined) {
+    return res.status(400).json({ error: 'Missing targetUserId or newBalance' });
+  }
+
+  try {
+    console.log(`[Server Admin API] Crypto/Trading balance update requested for user ${targetUserId}, type: ${balanceType}, asset: ${asset}, new balance: ${newBalance}`);
+    
+    // 1. Fetch existing crypto wallet
+    const { data: existingWallet } = await supabaseAdmin
+      .from('crypto_wallets')
+      .select('*')
+      .eq('user_id', targetUserId)
+      .maybeSingle();
+
+    let updatedWallet = null;
+
+    if (balanceType === 'trading') {
+      const oldVal = Number(existingWallet?.trading_balance || 0);
+      const { data, error } = await supabaseAdmin
+        .from('crypto_wallets')
+        .upsert({
+          ...(existingWallet?.id ? { id: existingWallet.id } : {}),
+          user_id: targetUserId,
+          trading_balance: newBalance,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Server Admin API Error] Failed to update trading_balance in crypto_wallets:', error);
+      } else {
+        updatedWallet = data;
+      }
+
+      // Sync to profiles table
+      try {
+        await supabaseAdmin.from('profiles').update({ trading_balance: newBalance }).eq('id', targetUserId);
+      } catch (e) {
+        console.warn('[Server Admin API Notice] Syncing trading_balance to profiles table notice:', e);
+      }
+
+      // Log transaction
+      await supabaseAdmin.from('transactions').insert([{
+        user_id: targetUserId,
+        account_id: 'trading',
+        type: newBalance >= oldVal ? 'admin_credit' : 'admin_debit',
+        amount: Math.abs(newBalance - oldVal),
+        currency: 'USD',
+        status: 'completed',
+        description: `Admin trading balance adjustment: ${reason || 'Manual Adjustment'}`,
+        created_at: new Date().toISOString()
+      }]);
+
+    } else if (balanceType === 'crypto' && asset) {
+      const currentBalances = existingWallet?.balances || { BTC: 0, ETH: 0, USDT: 0, SOL: 0 };
+      const oldVal = Number(currentBalances[asset] || 0);
+      const updatedBalances = { ...currentBalances, [asset]: newBalance };
+
+      const { data, error } = await supabaseAdmin
+        .from('crypto_wallets')
+        .upsert({
+          ...(existingWallet?.id ? { id: existingWallet.id } : {}),
+          user_id: targetUserId,
+          balances: updatedBalances,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'user_id' })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('[Server Admin API Error] Failed to update crypto balances in crypto_wallets:', error);
+      } else {
+        updatedWallet = data;
+      }
+
+      // Log in crypto_transactions table
+      await supabaseAdmin.from('crypto_transactions').insert([{
+        user_id: targetUserId,
+        asset: asset,
+        type: newBalance >= oldVal ? 'deposit' : 'withdrawal',
+        amount: Math.abs(newBalance - oldVal),
+        status: 'completed',
+        description: `Admin crypto balance adjustment (${asset}): ${reason || 'Manual Adjustment'}`,
+        created_at: new Date().toISOString()
+      }]);
+    }
+
+    // Log Audit
+    await supabaseAdmin.from('audit_logs').insert([{
+      admin_id: (req as any).admin?.id || 'admin',
+      admin_email: (req as any).admin?.email || 'admin@safeglobal.com',
+      action: 'WALLET_ADJUSTMENT',
+      target_user: targetUserId,
+      details: `Updated ${balanceType}${asset ? ` (${asset})` : ''} balance to ${newBalance}. Reason: ${reason}`,
+      ip_address: req.ip || '127.0.0.1'
+    }]);
+
+    res.json({ success: true, newBalance, wallet: updatedWallet });
+  } catch (err: any) {
+    console.error('[Server Admin API Error] update-crypto-balance exception:', err);
     res.status(500).json({ error: err.message });
   }
 });
