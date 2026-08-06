@@ -6,7 +6,7 @@ import {
 } from 'recharts';
 import { 
   ArrowUpRight, ArrowDownRight, Settings, List, BarChart2, Briefcase, Clock,
-  Search, Plus, Minus, X, Info, TrendingUp, TrendingDown
+  Search, Plus, Minus, X, Info, TrendingUp, TrendingDown, Star
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -48,6 +48,15 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
 
   // Flash state for Quotes
   const [flashingSymbols, setFlashingSymbols] = useState<Record<string, 'up' | 'down'>>({});
+
+  const toggleFavorite = (e: any, symbol: string) => {
+    e.stopPropagation();
+    if (favorites.includes(symbol)) {
+      setFavorites(favorites.filter(f => f !== symbol));
+    } else {
+      setFavorites([...favorites, symbol]);
+    }
+  };
 
   const activeMarket = useMemo(() => markets.find(m => m.symbol === selectedSymbol) || markets[0], [markets, selectedSymbol]);
 
@@ -338,8 +347,13 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
                   onClick={() => { setSelectedSymbol(m.symbol); setMobileTab('chart'); }}
                 >
                   <div className="flex flex-col w-1/3">
-                    <span className="font-bold text-sm tracking-wide">{m.symbol.replace('/','')}</span>
-                    <div className="flex gap-2 text-[10px] text-gray-500 mt-1">
+                    <div className="flex items-center gap-1">
+                      <button onClick={(e) => toggleFavorite(e, m.symbol)}>
+                        <Star size={14} className={favorites.includes(m.symbol) ? 'text-yellow-400 fill-yellow-400' : 'text-gray-600'} />
+                      </button>
+                      <span className="font-bold text-sm tracking-wide">{m.symbol.replace('/','')}</span>
+                    </div>
+                    <div className="flex gap-2 text-[10px] text-gray-500 mt-1 ml-4">
                       <span>{new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
                       <span>spread {m.spread}</span>
                     </div>
