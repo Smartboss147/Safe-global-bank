@@ -345,27 +345,27 @@ export default function AdminDashboard({ user }: { user: any }) {
         }
       }
 
-      // 3. Attempt upsert via supabase client if record doesn't exist
+      // 3. Attempt insert via supabase client if record doesn't exist
       if (!updateResult && targetUserId) {
         const { data, error } = await supabase
           .from('accounts')
-          .upsert([{
+          .insert([{
             user_id: targetUserId,
             account_number: targetAcc?.account_number || `ACC-${targetUserId.substring(0, 6).toUpperCase()}`,
             balance: newBalance,
             currency: userCurrInfo.code,
             account_type: 'checking',
             status: 'active'
-          }], { onConflict: 'user_id' })
+          }])
           .select()
           .single();
 
         if (!error && data) {
           updateResult = data;
-          console.log('[Admin Wallet System Audit] Successfully upserted account record via supabase client:', updateResult);
+          console.log('[Admin Wallet System Audit] Successfully inserted account record via supabase client:', updateResult);
         } else {
           updateError = error;
-          console.warn('[Admin Wallet System Audit] Upsert via supabase client returned notice/error:', error);
+          console.warn('[Admin Wallet System Audit] Insert via supabase client returned notice/error:', error);
         }
       }
 

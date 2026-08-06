@@ -233,7 +233,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
               user_id: user.id,
               balances: mergedBalances,
               address: updatedWallet.address
-            }, { onConflict: 'user_id' })
+            })
             .select()
             .maybeSingle();
 
@@ -354,7 +354,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
             user_id: user.id,
             balances: newBalances,
             address: wallet?.address || createDefaultWallet(user.id).address
-          }, { onConflict: 'user_id' })
+          })
           .select()
           .maybeSingle();
 
@@ -459,7 +459,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
             user_id: user.id,
             balances: newBalances,
             address: wallet?.address || createDefaultWallet(user.id).address
-          }, { onConflict: 'user_id' })
+          })
           .select()
           .maybeSingle();
 
@@ -588,7 +588,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
             user_id: user.id,
             balances: newBalances,
             address: wallet?.address || createDefaultWallet(user.id).address
-          }, { onConflict: 'user_id' })
+          })
           .select()
           .maybeSingle();
 

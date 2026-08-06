@@ -228,7 +228,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     };
 
     try {
-      await supabase.from('accounts').upsert(accountRecord, { onConflict: 'user_id' });
+      await supabase.from('accounts').insert(accountRecord);
       console.log(`[syncRegisteredUser] Created new initial account for ${userId} with balance ${initialBalance}`);
     } catch (err) {
       console.warn('[syncRegisteredUser] Supabase accounts upsert notice:', err);
@@ -258,12 +258,12 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   try {
     const { data: existingBroker } = await supabase.from('broker_accounts').select('*').eq('user_id', userId).maybeSingle();
     if (!existingBroker) {
-      await supabase.from('broker_accounts').upsert({
+      await supabase.from('broker_accounts').insert({
         user_id: userId,
         broker_name: 'Safe Global Prime',
         tier: 'Standard',
         status: 'active'
-      }, { onConflict: 'user_id' });
+      });
     }
   } catch (err) {
     console.warn('[syncRegisteredUser] Supabase broker_accounts notice:', err);
@@ -273,11 +273,11 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   try {
     const { data: existingStats } = await supabase.from('trading_statistics').select('*').eq('user_id', userId).maybeSingle();
     if (!existingStats) {
-      await supabase.from('trading_statistics').upsert({
+      await supabase.from('trading_statistics').insert({
         user_id: userId,
         total_trades: 0,
         total_profit: 0.00
-      }, { onConflict: 'user_id' });
+      });
     }
   } catch (err) {
     console.warn('[syncRegisteredUser] Supabase trading_statistics notice:', err);
@@ -288,7 +288,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     const { data: existingTradingAcc } = await supabase.from('trading_accounts').select('*').eq('user_id', userId).maybeSingle();
     if (!existingTradingAcc) {
       const trdAccNum = 'TRD-' + Math.floor(100000 + Math.random() * 900000);
-      await supabase.from('trading_accounts').upsert({
+      await supabase.from('trading_accounts').insert({
         user_id: userId,
         account_number: trdAccNum,
         balance: 10000.00,
@@ -297,7 +297,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
         free_margin: 10000.00,
         leverage: '1:100',
         status: 'active'
-      }, { onConflict: 'user_id' });
+      });
     }
   } catch (err) {
     console.warn('[syncRegisteredUser] Supabase trading_accounts notice:', err);
@@ -307,12 +307,12 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   try {
     const { data: existingVerification } = await supabase.from('identity_verification').select('*').eq('user_id', userId).maybeSingle();
     if (!existingVerification) {
-      await supabase.from('identity_verification').upsert({
+      await supabase.from('identity_verification').insert({
         user_id: userId,
         document_type: 'National ID',
         document_url: 'pending',
         status: 'pending'
-      }, { onConflict: 'user_id' });
+      });
     }
   } catch (err) {
     console.warn('[syncRegisteredUser] Supabase identity_verification notice:', err);
@@ -322,12 +322,12 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   try {
     const { data: existingKyc } = await supabase.from('kyc_documents').select('*').eq('user_id', userId).maybeSingle();
     if (!existingKyc) {
-      await supabase.from('kyc_documents').upsert({
+      await supabase.from('kyc_documents').insert({
         user_id: userId,
         document_type: 'Identity Card',
         document_url: 'pending',
         status: 'pending'
-      }, { onConflict: 'user_id' });
+      });
     }
   } catch (err) {
     console.warn('[syncRegisteredUser] Supabase kyc_documents notice:', err);
@@ -336,7 +336,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   // 11. If role is admin, ensure entry in admins table
   if (role === 'admin' || email.toLowerCase().includes('admin@safeglobal')) {
     try {
-      await supabase.from('admins').upsert({ user_id: userId, email }, { onConflict: 'user_id' });
+      await supabase.from('admins').insert({ user_id: userId, email });
     } catch (e) {
       console.warn('[syncRegisteredUser] Admins table notice:', e);
     }
