@@ -207,37 +207,62 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
     const orderPrice = type === 'buy' ? activeMarket.ask : activeMarket.bid;
 
     try {
-      const { data: posData, error: posError } = await supabase.from('trading_positions').insert([{
-        user_id: currentUserId,
-        asset_symbol: activeMarket.symbol,
-        type: type,
-        amount: lotSize,
-        entry_price: orderPrice,
-        leverage: 100,
-        status: 'open'
-      }]).select().single();
+      const res = await fetch('/api/trading/execute-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: currentUserId,
+          asset_symbol: activeMarket.symbol,
+          type,
+          amount: lotSize,
+          entry_price: orderPrice,
+          stop_loss: stopLoss ? Number(stopLoss) : null,
+          take_profit: takeProfit ? Number(takeProfit) : null,
+          leverage: 100
+        })
+      });
+      const data = await res.json();
 
-      if (posData && !posError) {
-        if (stopLoss || takeProfit) {
-           await supabase.from('trading_history').insert([{
-             user_id: currentUserId,
-             position_id: posData.id,
-             details: {
-               type: 'sl_tp_meta',
-               stop_loss: stopLoss ? Number(stopLoss) : null,
-               take_profit: takeProfit ? Number(takeProfit) : null
-             }
-           }]);
-        }
+      if (res.ok && data.success) {
         await fetchTrades();
         setIsOrderWindowOpen(false);
         setStopLoss('');
         setTakeProfit('');
       } else {
-        alert("Trade execution failed.");
+        // Fallback to client Supabase insert
+        const { data: posData, error: posError } = await supabase.from('trading_positions').insert([{
+          user_id: currentUserId,
+          asset_symbol: activeMarket.symbol,
+          type: type,
+          amount: lotSize,
+          entry_price: orderPrice,
+          leverage: 100,
+          status: 'open'
+        }]).select().single();
+
+        if (posData && !posError) {
+          if (stopLoss || takeProfit) {
+             await supabase.from('trading_history').insert([{
+               user_id: currentUserId,
+               position_id: posData.id,
+               details: {
+                 type: 'sl_tp_meta',
+                 stop_loss: stopLoss ? Number(stopLoss) : null,
+                 take_profit: takeProfit ? Number(takeProfit) : null
+               }
+             }]);
+          }
+          await fetchTrades();
+          setIsOrderWindowOpen(false);
+          setStopLoss('');
+          setTakeProfit('');
+        } else {
+          alert(data.error || "Trade execution failed.");
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      alert("Trade execution error: " + (err.message || 'Unknown error'));
     } finally {
       setIsSubmitting(false);
     }
@@ -256,27 +281,43 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
     setTrades(prev => prev.map(t => t.id === tradeId ? { ...t, status: 'completed', close_price: clPrice, profit: pnl } : t));
 
     try { 
-      await supabase.from('trading_positions').update({ 
-        status: 'closed',
-        close_price: clPrice,
-        profit_loss: pnl,
-        closed_at: new Date().toISOString()
-      }).eq('id', tradeId); 
-      
-      await supabase.from('trading_history').insert([{
-         user_id: currentUserId,
-         position_id: tradeId,
-         details: {
-           type: 'close_event',
-           reason: reason || 'manual',
-           close_price: clPrice,
-           pnl: pnl
-         }
-      }]);
+      const res = await fetch('/api/trading/close-position', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position_id: tradeId,
+          user_id: currentUserId,
+          close_price: clPrice,
+          profit_loss: pnl,
+          reason: reason || 'manual'
+        })
+      });
+      const data = await res.json();
 
-      const { data: accData } = await supabase.from('accounts').select('balance').eq('user_id', currentUserId).single();
-      if (accData) {
-        await supabase.from('accounts').update({ balance: accData.balance + pnl }).eq('user_id', currentUserId);
+      if (!res.ok || !data.success) {
+        // Fallback to client Supabase update
+        await supabase.from('trading_positions').update({ 
+          status: 'closed',
+          close_price: clPrice,
+          profit_loss: pnl,
+          closed_at: new Date().toISOString()
+        }).eq('id', tradeId); 
+        
+        await supabase.from('trading_history').insert([{
+           user_id: currentUserId,
+           position_id: tradeId,
+           details: {
+             type: 'close_event',
+             reason: reason || 'manual',
+             close_price: clPrice,
+             pnl: pnl
+           }
+        }]);
+
+        const { data: accData } = await supabase.from('accounts').select('balance, id').eq('user_id', currentUserId).maybeSingle();
+        if (accData) {
+          await supabase.from('accounts').update({ balance: (Number(accData.balance) || 0) + pnl }).eq('id', accData.id);
+        }
       }
       
       await fetchTrades();

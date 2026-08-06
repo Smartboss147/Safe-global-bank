@@ -648,6 +648,104 @@ app.get('/api/admin/email-audit-logs', verifyAdmin, async (req, res) => {
   }
 });
 
+// API endpoint to execute a trade (buy/sell) using admin privileges (bypassing RLS)
+app.post('/api/trading/execute-order', async (req, res) => {
+  const { user_id, asset_symbol, type, amount, entry_price, stop_loss, take_profit, leverage } = req.body;
+  if (!user_id || !asset_symbol || !type || amount === undefined || entry_price === undefined) {
+    return res.status(400).json({ error: 'Missing required trade parameters.' });
+  }
+
+  try {
+    const { data: posData, error: posError } = await supabaseAdmin
+      .from('trading_positions')
+      .insert([{
+        user_id,
+        asset_symbol,
+        type,
+        amount,
+        entry_price,
+        leverage: leverage || 100,
+        status: 'open'
+      }])
+      .select()
+      .single();
+
+    if (posError) throw posError;
+
+    if (posData && (stop_loss || take_profit)) {
+      await supabaseAdmin.from('trading_history').insert([{
+        user_id,
+        position_id: posData.id,
+        details: {
+          type: 'sl_tp_meta',
+          stop_loss: stop_loss ? Number(stop_loss) : null,
+          take_profit: take_profit ? Number(take_profit) : null
+        }
+      }]);
+    }
+
+    console.log(`[Server Trading] Executed ${type} order for user ${user_id}: ${amount} ${asset_symbol} @ ${entry_price}`);
+    res.json({ success: true, position: posData });
+  } catch (err: any) {
+    console.error('[Server Trading Error] Failed to execute trade:', err);
+    res.status(500).json({ error: err.message || 'Trade execution failed' });
+  }
+});
+
+// API endpoint to close a trade position using admin privileges
+app.post('/api/trading/close-position', async (req, res) => {
+  const { position_id, user_id, close_price, profit_loss, reason } = req.body;
+  if (!position_id || !user_id || close_price === undefined || profit_loss === undefined) {
+    return res.status(400).json({ error: 'Missing required close parameters.' });
+  }
+
+  try {
+    const { error: updateError } = await supabaseAdmin
+      .from('trading_positions')
+      .update({
+        status: 'closed',
+        close_price,
+        profit_loss,
+        closed_at: new Date().toISOString()
+      })
+      .eq('id', position_id);
+
+    if (updateError) throw updateError;
+
+    await supabaseAdmin.from('trading_history').insert([{
+      user_id,
+      position_id,
+      details: {
+        type: 'close_event',
+        reason: reason || 'manual',
+        close_price,
+        pnl: profit_loss
+      }
+    }]);
+
+    // Update account balance
+    const { data: accData } = await supabaseAdmin
+      .from('accounts')
+      .select('balance, id')
+      .eq('user_id', user_id)
+      .maybeSingle();
+
+    if (accData) {
+      const newBal = (Number(accData.balance) || 0) + Number(profit_loss);
+      await supabaseAdmin
+        .from('accounts')
+        .update({ balance: newBal, updated_at: new Date().toISOString() })
+        .eq('id', accData.id);
+    }
+
+    console.log(`[Server Trading] Closed position ${position_id} for user ${user_id} with PnL: ${profit_loss}`);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('[Server Trading Error] Failed to close position:', err);
+    res.status(500).json({ error: err.message || 'Failed to close position' });
+  }
+});
+
   // API routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
