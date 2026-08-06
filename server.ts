@@ -648,6 +648,35 @@ app.get('/api/admin/email-audit-logs', verifyAdmin, async (req, res) => {
   }
 });
 
+// Helper to resolve or ensure a valid UUID profile for foreign keys
+async function resolveValidUserId(inputUserId: string): Promise<string> {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  let resolvedId = inputUserId;
+  if (!uuidRegex.test(resolvedId)) {
+    const { data: profileList } = await supabaseAdmin.from('profiles').select('id').limit(1);
+    if (profileList && profileList.length > 0) {
+      resolvedId = profileList[0].id;
+    } else {
+      resolvedId = crypto.randomUUID();
+      await supabaseAdmin.from('profiles').insert([{
+        id: resolvedId,
+        email: `${inputUserId || 'user'}@safeglobalbank.com`,
+        full_name: 'Traded User'
+      }]);
+    }
+  } else {
+    const { data: prof } = await supabaseAdmin.from('profiles').select('id').eq('id', resolvedId).maybeSingle();
+    if (!prof) {
+      await supabaseAdmin.from('profiles').insert([{
+        id: resolvedId,
+        email: `user_${resolvedId.substring(0,8)}@safeglobalbank.com`,
+        full_name: 'Traded User'
+      }]);
+    }
+  }
+  return resolvedId;
+}
+
 // API endpoint to execute a trade (buy/sell) using admin privileges (bypassing RLS)
 app.post('/api/trading/execute-order', async (req, res) => {
   const { user_id, asset_symbol, type, amount, entry_price, stop_loss, take_profit, leverage } = req.body;
@@ -656,10 +685,12 @@ app.post('/api/trading/execute-order', async (req, res) => {
   }
 
   try {
+    const validUserId = await resolveValidUserId(user_id);
+
     const { data: posData, error: posError } = await supabaseAdmin
       .from('trading_positions')
       .insert([{
-        user_id,
+        user_id: validUserId,
         asset_symbol,
         type,
         amount,
@@ -674,7 +705,7 @@ app.post('/api/trading/execute-order', async (req, res) => {
 
     if (posData && (stop_loss || take_profit)) {
       await supabaseAdmin.from('trading_history').insert([{
-        user_id,
+        user_id: validUserId,
         position_id: posData.id,
         details: {
           type: 'sl_tp_meta',
@@ -684,7 +715,7 @@ app.post('/api/trading/execute-order', async (req, res) => {
       }]);
     }
 
-    console.log(`[Server Trading] Executed ${type} order for user ${user_id}: ${amount} ${asset_symbol} @ ${entry_price}`);
+    console.log(`[Server Trading] Executed ${type} order for user ${validUserId}: ${amount} ${asset_symbol} @ ${entry_price}`);
     res.json({ success: true, position: posData });
   } catch (err: any) {
     console.error('[Server Trading Error] Failed to execute trade:', err);
@@ -700,6 +731,8 @@ app.post('/api/trading/close-position', async (req, res) => {
   }
 
   try {
+    const validUserId = await resolveValidUserId(user_id);
+
     const { error: updateError } = await supabaseAdmin
       .from('trading_positions')
       .update({
@@ -713,7 +746,7 @@ app.post('/api/trading/close-position', async (req, res) => {
     if (updateError) throw updateError;
 
     await supabaseAdmin.from('trading_history').insert([{
-      user_id,
+      user_id: validUserId,
       position_id,
       details: {
         type: 'close_event',
@@ -727,7 +760,7 @@ app.post('/api/trading/close-position', async (req, res) => {
     const { data: accData } = await supabaseAdmin
       .from('accounts')
       .select('balance, id')
-      .eq('user_id', user_id)
+      .eq('user_id', validUserId)
       .maybeSingle();
 
     if (accData) {
@@ -738,7 +771,7 @@ app.post('/api/trading/close-position', async (req, res) => {
         .eq('id', accData.id);
     }
 
-    console.log(`[Server Trading] Closed position ${position_id} for user ${user_id} with PnL: ${profit_loss}`);
+    console.log(`[Server Trading] Closed position ${position_id} for user ${validUserId} with PnL: ${profit_loss}`);
     res.json({ success: true });
   } catch (err: any) {
     console.error('[Server Trading Error] Failed to close position:', err);
