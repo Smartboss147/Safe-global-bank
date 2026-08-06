@@ -440,42 +440,203 @@ export default function AdminDashboard({ user }: { user: any }) {
 
       console.log(`[Admin] Updating ${statusField} for user ${userId} to ${statusValue}...`);
 
-      // 1. Update profiles table
-      await supabase.from('profiles').update(updates).eq('id', userId);
+      // 1. Attempt update via Service Role Backend API for guaranteed persistence
+      let apiSuccess = false;
+      try {
+        const session = (await supabase.auth.getSession()).data.session;
+        const token = session?.access_token;
+        const res = await fetch('/api/admin/update-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            userId,
+            updates,
+            accountUpdates: {
+              status: statusField === 'status' || statusField === 'account_status' ? statusValue : undefined,
+              currency: statusField === 'currency' || statusField === 'currency_code' ? statusValue : undefined,
+              currency_code: statusField === 'currency' || statusField === 'currency_code' ? statusValue : undefined,
+              account_type: statusField === 'account_type' || statusField === 'accountType' ? statusValue : undefined
+            },
+            actionName,
+            details: `Updated ${statusField} to ${statusValue}`
+          })
+        });
+        const apiJson = await res.json();
+        if (res.ok && apiJson.success) {
+          apiSuccess = true;
+          console.log('[Admin] Successfully persisted user update via backend API:', apiJson);
+        }
+      } catch (apiErr) {
+        console.warn('[Admin] Backend API call failed, falling back to client update:', apiErr);
+      }
 
-      // 2. Sync to related tables if applicable
-      if (statusField === 'kyc_status' || statusField === 'kycStatus') {
-        await supabase.from('kyc_documents').update({ status: statusValue }).eq('user_id', userId);
-      }
-      if (statusField === 'currency' || statusField === 'currency_code') {
-        await supabase.from('accounts').update({ currency: statusValue, currency_code: statusValue }).eq('user_id', userId);
-      }
-      if (statusField === 'account_type' || statusField === 'accountType') {
-        await supabase.from('accounts').update({ account_type: statusValue }).eq('user_id', userId);
-      }
-      if (statusField === 'account_status' || statusField === 'status') {
-        await supabase.from('accounts').update({ status: statusValue }).eq('user_id', userId);
+      // 2. Fallback client update if API call was unreachable
+      if (!apiSuccess) {
+        await supabase.from('profiles').update(updates).eq('id', userId);
+
+        if (statusField === 'kyc_status' || statusField === 'kycStatus') {
+          await supabase.from('kyc_documents').update({ status: statusValue }).eq('user_id', userId);
+        }
+        if (statusField === 'currency' || statusField === 'currency_code') {
+          await supabase.from('accounts').update({ currency: statusValue, currency_code: statusValue }).eq('user_id', userId);
+        }
+        if (statusField === 'account_type' || statusField === 'accountType') {
+          await supabase.from('accounts').update({ account_type: statusValue }).eq('user_id', userId);
+        }
+        if (statusField === 'account_status' || statusField === 'status') {
+          await supabase.from('accounts').update({ status: statusValue }).eq('user_id', userId);
+        }
+
+        await logAuditAction(actionName, userId, `Updated ${statusField} to ${statusValue}`);
       }
 
-      await logAuditAction(actionName, userId, `Updated ${statusField} to ${statusValue}`);
+      // Sync local storage mirror if present
+      try {
+        const storageKey = `local_profile_${userId}`;
+        const existingLocal = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        localStorage.setItem(storageKey, JSON.stringify({ ...existingLocal, ...updates, updated_at: new Date().toISOString() }));
+      } catch (e) {}
+
       setMsg({ type: 'success', text: `User ${actionName.toLowerCase().replace(/_/g, ' ')} successfully.` });
       
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId, statusField, statusValue } }));
       }
-      fetchData();
+      fetchData(true);
     } catch (err: any) {
       console.error("[Admin] Failed to update user status:", err);
       setMsg({ type: 'error', text: 'Failed to update user status.' });
     }
   };
 
+  const handleBatchSaveUser = async (updatedUserData: any) => {
+    if (!updatedUserData || !updatedUserData.id) return;
+    const userId = updatedUserData.id;
+    try {
+      const updates = {
+        first_name: updatedUserData.firstName || '',
+        last_name: updatedUserData.lastName || '',
+        display_name: updatedUserData.displayName || `${updatedUserData.firstName || ''} ${updatedUserData.lastName || ''}`.trim() || updatedUserData.email?.split('@')[0] || 'User',
+        role: updatedUserData.role || 'user',
+        status: updatedUserData.status || 'active',
+        kyc_status: updatedUserData.kyc_status || 'pending',
+        pin: updatedUserData.pin || '1234',
+        transaction_pin: updatedUserData.pin || '1234'
+      };
+
+      console.log(`[Admin] Batch saving user details for ${userId}:`, updates);
+
+      let apiSuccess = false;
+      try {
+        const session = (await supabase.auth.getSession()).data.session;
+        const token = session?.access_token;
+        const res = await fetch('/api/admin/update-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            userId,
+            updates,
+            accountUpdates: {
+              status: updates.status
+            },
+            actionName: 'PROFILE_BATCH_UPDATE',
+            details: `Updated name, role (${updates.role}), status (${updates.status}), KYC (${updates.kyc_status}), and PIN`
+          })
+        });
+        const apiJson = await res.json();
+        if (res.ok && apiJson.success) {
+          apiSuccess = true;
+          console.log('[Admin] Batch update persisted via Service Role backend API:', apiJson);
+        }
+      } catch (e) {
+        console.warn('[Admin] Batch update API error:', e);
+      }
+
+      if (!apiSuccess) {
+        await supabase.from('profiles').update(updates).eq('id', userId);
+        await supabase.from('accounts').update({ status: updates.status }).eq('user_id', userId);
+        await supabase.from('kyc_documents').update({ status: updates.kyc_status }).eq('user_id', userId);
+        await logAuditAction('PROFILE_BATCH_UPDATE', userId, 'Updated profile details via client fallback');
+      }
+
+      // Update local storage cache
+      try {
+        const storageKey = `local_profile_${userId}`;
+        const existingLocal = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        localStorage.setItem(storageKey, JSON.stringify({ ...existingLocal, ...updates, updated_at: new Date().toISOString() }));
+      } catch (e) {}
+
+      setMsg({ type: 'success', text: `User profile for ${updatedUserData.email || userId} saved successfully.` });
+      setIsEditModalOpen(false);
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId, updates } }));
+      }
+      fetchData(true);
+    } catch (err: any) {
+      console.error("[Admin] Error batch saving user profile:", err);
+      setMsg({ type: 'error', text: 'Error saving user changes.' });
+    }
+  };
+
+  const handleDeleteUserRecord = async (u: any) => {
+    if (!u || !u.id) return;
+    if (confirm(`Delete user ${u.email}? This action cannot be undone.`)) {
+      setUsers(prev => prev.filter(item => item.id !== u.id));
+      try {
+        const session = (await supabase.auth.getSession()).data.session;
+        const token = session?.access_token;
+        await fetch('/api/admin/delete-user', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ userId: u.id })
+        });
+      } catch (e) {
+        try {
+          await supabase.from('profiles').delete().eq('id', u.id);
+          await supabase.from('accounts').delete().eq('user_id', u.id);
+        } catch (err) {}
+      }
+      await logAuditAction('USER_DELETED', u.id, `Deleted user record for ${u.email}`);
+      setMsg({ type: 'success', text: `User ${u.email} deleted.` });
+      fetchData(true);
+    }
+  };
+
   const handleTxStatus = async (txId: string, status: string, collectionName = 'transactions') => {
     try {
-      await supabase.from(collectionName).update({ status }).eq('id', txId);
+      let apiSuccess = false;
+      try {
+        const session = (await supabase.auth.getSession()).data.session;
+        const token = session?.access_token;
+        const res = await fetch('/api/admin/update-transaction', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ txId, status, collectionName })
+        });
+        const apiJson = await res.json();
+        if (res.ok && apiJson.success) apiSuccess = true;
+      } catch (e) {}
+
+      if (!apiSuccess) {
+        await supabase.from(collectionName).update({ status }).eq('id', txId);
+      }
+
       await logAuditAction('TRANSACTION_STATUS_UPDATE', txId, `Marked transaction #${txId.substring(0, 8)} as ${status}`);
       setMsg({ type: 'success', text: `Transaction marked as ${status}.` });
-      fetchData();
+      fetchData(true);
     } catch (err: any) {
       setMsg({ type: 'error', text: 'Error updating transaction status.' });
     }
@@ -956,13 +1117,7 @@ export default function AdminDashboard({ user }: { user: any }) {
                               </button>
 
                               <button 
-                                onClick={async () => {
-                                  if (confirm(`Delete user ${u.email}? This action cannot be undone.`)) {
-                                    setUsers(prev => prev.filter(item => item.id !== u.id));
-                                    await logAuditAction('USER_DELETED', u.id, `Deleted user record for ${u.email}`);
-                                    setMsg({ type: 'success', text: `User ${u.email} deleted.` });
-                                  }
-                                }}
+                                onClick={() => handleDeleteUserRecord(u)}
                                 title="Delete User"
                                 className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg transition"
                               >
@@ -1788,16 +1943,7 @@ export default function AdminDashboard({ user }: { user: any }) {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
-                  onClick={() => {
-                    handleUserStatusUpdate(selectedUser.id, 'role', selectedUser.role, 'ROLE_UPDATED');
-                    handleUserStatusUpdate(selectedUser.id, 'status', selectedUser.status, 'STATUS_UPDATED');
-                    handleUserStatusUpdate(selectedUser.id, 'kyc_status', selectedUser.kyc_status, 'KYC_UPDATED');
-                    handleUserStatusUpdate(selectedUser.id, 'pin', selectedUser.pin, 'PIN_UPDATED');
-                    handleUserStatusUpdate(selectedUser.id, 'first_name', selectedUser.firstName, 'PROFILE_UPDATED');
-                    handleUserStatusUpdate(selectedUser.id, 'last_name', selectedUser.lastName, 'PROFILE_UPDATED');
-                    handleUserStatusUpdate(selectedUser.id, 'display_name', selectedUser.displayName, 'PROFILE_UPDATED');
-                    setIsEditModalOpen(false);
-                  }}
+                  onClick={() => handleBatchSaveUser(selectedUser)}
                   className="py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition"
                 >
                   Save Changes
