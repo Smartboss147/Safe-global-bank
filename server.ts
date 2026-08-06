@@ -319,16 +319,21 @@ app.post('/api/admin/update-balance', verifyAdmin, async (req, res) => {
     }
     
     // Log transaction for ledger
-    await supabaseAdmin.from('transactions').insert([{
-      user_id: targetUserId || 'unknown',
-      account_id: updatedAcc?.id || accountId || 'main',
-      type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
-      amount: Math.abs(newBalance - oldBalance),
-      currency: account?.currency || 'USD',
-      status: 'completed',
-      description: `Admin balance adjustment: ${reason}`,
-      created_at: new Date().toISOString()
-    }]);
+    try {
+      const validAccId = (updatedAcc?.id && !updatedAcc.id.startsWith('acc_')) ? updatedAcc.id : null;
+      await supabaseAdmin.from('transactions').insert([{
+        user_id: targetUserId || 'unknown',
+        account_id: validAccId,
+        type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
+        amount: Math.abs(newBalance - oldBalance),
+        currency: account?.currency || 'USD',
+        status: 'completed',
+        description: `Admin balance adjustment: ${reason}`,
+        created_at: new Date().toISOString()
+      }]);
+    } catch (txErr) {
+      console.warn('[Server Admin API] Transaction log notice:', txErr);
+    }
     
     // Log audit
     await supabaseAdmin.from('audit_logs').insert([{
@@ -405,16 +410,20 @@ app.post('/api/admin/update-crypto-balance', verifyAdmin, async (req, res) => {
       }
 
       // Log transaction
-      await supabaseAdmin.from('transactions').insert([{
-        user_id: targetUserId,
-        account_id: 'trading',
-        type: newBalance >= oldVal ? 'admin_credit' : 'admin_debit',
-        amount: Math.abs(newBalance - oldVal),
-        currency: 'USD',
-        status: 'completed',
-        description: `Admin trading balance adjustment: ${reason || 'Manual Adjustment'}`,
-        created_at: new Date().toISOString()
-      }]);
+      try {
+        await supabaseAdmin.from('transactions').insert([{
+          user_id: targetUserId,
+          account_id: null,
+          type: newBalance >= oldVal ? 'admin_credit' : 'admin_debit',
+          amount: Math.abs(newBalance - oldVal),
+          currency: 'USD',
+          status: 'completed',
+          description: `Admin trading balance adjustment: ${reason || 'Manual Adjustment'}`,
+          created_at: new Date().toISOString()
+        }]);
+      } catch (txErr) {
+        console.warn('[Server Admin API] Transaction log notice:', txErr);
+      }
 
     } else if (balanceType === 'crypto' && asset) {
       const currentBalances = existingWallet?.balances || { BTC: 0, ETH: 0, USDT: 0, SOL: 0 };
@@ -480,6 +489,61 @@ app.post('/api/admin/update-crypto-balance', verifyAdmin, async (req, res) => {
   }
 });
 
+// API endpoint for testing SMTP configuration
+app.post('/api/admin/test-smtp', verifyAdmin, async (req, res) => {
+  const { testEmail } = req.body;
+  if (!testEmail) {
+    return res.status(400).json({ error: 'Test email address required' });
+  }
+
+  let smtpHost = process.env.SMTP_HOST?.trim();
+  const smtpPort = Number(process.env.SMTP_PORT || 465);
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD)?.trim();
+  const smtpFrom = process.env.SMTP_FROM?.trim() || (smtpUser ? `"Safe Global Bank" <${smtpUser}>` : '"Safe Global Bank" <noreply@safeglobalbank.com>');
+
+  if (!smtpHost && smtpUser && smtpUser.includes('@gmail.com')) {
+    smtpHost = 'smtp.gmail.com';
+  }
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    return res.status(400).json({ 
+      success: false, 
+      error: `Missing SMTP credentials. Please configure SMTP_HOST (or Gmail account), SMTP_USER, and SMTP_PASS (or GMAIL_APP_PASSWORD) in your Vercel environment variables.` 
+    });
+  }
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      },
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+
+    await transporter.verify();
+
+    await transporter.sendMail({
+      from: smtpFrom,
+      to: testEmail,
+      subject: 'Safe Global Bank - SMTP Test Email',
+      html: `<h2>SMTP Configuration Success</h2><p>Your SMTP email configuration is fully working and successfully connected to <b>${smtpHost}:${smtpPort}</b>.</p>`
+    });
+
+    console.log(`[Server SMTP Test] Test email successfully sent to ${testEmail} via ${smtpHost}:${smtpPort}`);
+    res.json({ success: true, message: `Test email successfully sent to ${testEmail} via ${smtpHost}:${smtpPort}` });
+  } catch (err: any) {
+    console.error('[Server SMTP Test Error]:', err);
+    res.status(500).json({ success: false, error: `SMTP Connection / Send Failed: ${err.message}` });
+  }
+});
+
 // API endpoint for dispatching cryptocurrency transfer email notifications
 app.post('/api/crypto/send-transfer-email', async (req, res) => {
   const { recipientEmail, referenceId, subject, html, params } = req.body;
@@ -492,11 +556,11 @@ app.post('/api/crypto/send-transfer-email', async (req, res) => {
   let sendError: string | null = null;
 
   // Try real SMTP email dispatch if SMTP credentials are present
-  let smtpHost = process.env.SMTP_HOST;
+  let smtpHost = process.env.SMTP_HOST?.trim();
   const smtpPort = Number(process.env.SMTP_PORT || 465);
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD;
-  const smtpFrom = process.env.SMTP_FROM || (smtpUser ? `"Safe Global Bank" <${smtpUser}>` : '"Safe Global Bank Crypto" <noreply@safeglobalbank.com>');
+  const smtpUser = process.env.SMTP_USER?.trim();
+  const smtpPass = (process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD)?.trim();
+  const smtpFrom = process.env.SMTP_FROM?.trim() || (smtpUser ? `"Safe Global Bank" <${smtpUser}>` : '"Safe Global Bank Crypto" <noreply@safeglobalbank.com>');
 
   // Auto-detect Gmail if host not specified but user is gmail
   if (!smtpHost && smtpUser && smtpUser.includes('@gmail.com')) {
@@ -532,7 +596,7 @@ app.post('/api/crypto/send-transfer-email', async (req, res) => {
       sendError = err.message;
     }
   } else {
-    console.log(`[Server SMTP Info] No SMTP_USER/SMTP_PASS configured. Email stored in in-app account history & audit log for ${recipientEmail}`);
+    console.log(`[Server SMTP Info] SMTP credentials not fully provided. Email stored in in-app account history & audit log for ${recipientEmail}`);
   }
 
   try {

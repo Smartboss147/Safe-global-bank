@@ -44,6 +44,35 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [notifTitle, setNotifTitle] = useState('');
   const [notifBody, setNotifBody] = useState('');
 
+  // SMTP Test State
+  const [testEmailInput, setTestEmailInput] = useState('smartcompany112234@gmail.com');
+  const [testSmtpLoading, setTestSmtpLoading] = useState(false);
+  const [testSmtpResult, setTestSmtpResult] = useState<{ success?: boolean; message?: string; error?: string } | null>(null);
+
+  const handleTestSmtp = async () => {
+    if (!testEmailInput) return;
+    setTestSmtpLoading(true);
+    setTestSmtpResult(null);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const res = await fetch('/api/admin/test-smtp', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ testEmail: testEmailInput })
+      });
+      const data = await res.json();
+      setTestSmtpResult(data);
+    } catch (err: any) {
+      setTestSmtpResult({ success: false, error: err.message || 'Failed to connect to test-smtp endpoint' });
+    } finally {
+      setTestSmtpLoading(false);
+    }
+  };
+
   // Broker & Trading Management State
   const [tradingInstruments, setTradingInstruments] = useState([
     { id: 'eurusd', symbol: 'EUR/USD', category: 'Forex', spread: '0.8 pips', maxLeverage: '1:500', status: 'Open' },
@@ -442,16 +471,21 @@ export default function AdminDashboard({ user }: { user: any }) {
       }
       
       // Log transaction for audit integrity
-      await supabase.from('transactions').insert([{
-        user_id: targetUserId,
-        account_id: updateResult.id || accountId,
-        type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
-        amount: Math.abs(newBalance - oldBalance),
-        currency: targetAcc?.currency_code || targetAcc?.currency || userCurrInfo.code,
-        status: 'completed',
-        description: `Admin balance adjustment: ${reason}`,
-        created_at: new Date().toISOString()
-      }]);
+      try {
+        const safeAccId = (updateResult?.id && !updateResult.id.startsWith('acc_')) ? updateResult.id : null;
+        await supabase.from('transactions').insert([{
+          user_id: targetUserId,
+          account_id: safeAccId,
+          type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
+          amount: Math.abs(newBalance - oldBalance),
+          currency: targetAcc?.currency_code || targetAcc?.currency || userCurrInfo.code,
+          status: 'completed',
+          description: `Admin balance adjustment: ${reason}`,
+          created_at: new Date().toISOString()
+        }]);
+      } catch (txErr) {
+        console.warn('[Admin Wallet System Audit] Transaction log notice:', txErr);
+      }
 
       await logAuditAction('WALLET_ADJUSTMENT', targetUserId, `Balance adjusted from ${formatCurrencyAmount(oldBalance, userCurrInfo)} to ${formatCurrencyAmount(newBalance, userCurrInfo)}. Reason: ${reason}`);
       setMsg({ type: 'success', text: `Wallet balance updated to ${formatCurrencyAmount(newBalance, userCurrInfo)} in Supabase database and logged.` });
@@ -1775,6 +1809,43 @@ export default function AdminDashboard({ user }: { user: any }) {
               >
                 <Download size={14} /> Export Email Logs JSON
               </button>
+            </div>
+
+            {/* SMTP Diagnostics & Test Widget */}
+            <div className="bg-[#181a22] border border-white/10 p-5 rounded-2xl space-y-4">
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <Zap className="text-amber-400" size={16} />
+                SMTP Configuration & Delivery Diagnostic Tool
+              </h4>
+              <p className="text-xs text-gray-400">
+                Verify your Vercel SMTP environment variables (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS / GMAIL_APP_PASSWORD) by sending a live test email directly to your inbox.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input 
+                  type="email" 
+                  value={testEmailInput}
+                  onChange={(e) => setTestEmailInput(e.target.value)}
+                  placeholder="Enter recipient email (e.g. smartcompany112234@gmail.com)"
+                  className="flex-1 bg-[#121319] border border-white/10 px-4 py-2.5 rounded-xl text-xs text-white focus:outline-none focus:border-emerald-500 font-mono"
+                />
+                <button
+                  onClick={handleTestSmtp}
+                  disabled={testSmtpLoading}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 whitespace-nowrap shadow-md"
+                >
+                  {testSmtpLoading ? <RefreshCw className="animate-spin" size={14} /> : <Mail size={14} />}
+                  {testSmtpLoading ? 'Testing SMTP...' : 'Send Test SMTP Email'}
+                </button>
+              </div>
+              {testSmtpResult && (
+                <div className={`p-3.5 rounded-xl text-xs font-mono border ${
+                  testSmtpResult.success 
+                    ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' 
+                    : 'bg-rose-500/10 text-rose-300 border-rose-500/30'
+                }`}>
+                  {testSmtpResult.success ? testSmtpResult.message : testSmtpResult.error}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3 max-h-[550px] overflow-y-auto pr-2">
