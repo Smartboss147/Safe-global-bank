@@ -113,31 +113,72 @@ export default function AdminDashboard({ user }: { user: any }) {
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const { data: countriesData } = await supabase.from('supported_countries').select('*').order('country_name');
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const res = await fetch('/api/admin/all-data', {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      const data = await res.json();
+
+      let countriesData: any = null;
+      let profilesData: any = null;
+      let accountsData: any = null;
+      let cryptoWalletsData: any = null;
+      let txData: any = null;
+      let auditData: any = null;
+      let emlData: any = null;
+      let cryptoData: any = null;
+      let kycData: any = null;
+      let plansData: any = null;
+      let assetsData: any = null;
+
+      if (res.ok && data.success) {
+        countriesData = data.countries;
+        profilesData = data.profiles;
+        accountsData = data.accounts;
+        cryptoWalletsData = data.cryptoWallets;
+        txData = data.transactions;
+        auditData = data.auditLogs;
+        emlData = data.emailLogs;
+        cryptoData = data.cryptoTxs;
+        kycData = data.kycDocs;
+        plansData = data.investmentPlans;
+        assetsData = data.marketAssets;
+      } else {
+        // Fallback to direct client queries if backend endpoint fails
+        const [cRes, pRes, aRes, cwRes, tRes, adRes, crRes, kRes, plRes, asRes] = await Promise.all([
+          supabase.from('supported_countries').select('*').order('country_name'),
+          supabase.from('profiles').select('*'),
+          supabase.from('accounts').select('*'),
+          supabase.from('crypto_wallets').select('*'),
+          supabase.from('transactions').select('*').order('created_at', { ascending: false }),
+          supabase.from('audit_logs').select('*').order('created_at', { ascending: false }),
+          supabase.from('crypto_transactions').select('*'),
+          supabase.from('kyc_documents').select('*'),
+          supabase.from('investment_plans').select('*'),
+          supabase.from('market_assets').select('*')
+        ]);
+        countriesData = cRes.data;
+        profilesData = pRes.data;
+        accountsData = aRes.data;
+        cryptoWalletsData = cwRes.data;
+        txData = tRes.data;
+        auditData = adRes.data;
+        cryptoData = crRes.data;
+        kycData = kRes.data;
+        plansData = plRes.data;
+        assetsData = asRes.data;
+      }
+
       if (countriesData) setSupportedCountries(countriesData);
-
-      // 1. Fetch profiles
-      const { data: profilesData } = await supabase.from('profiles').select('*');
-      
-      // 2. Fetch accounts
-      const { data: accountsData } = await supabase.from('accounts').select('*');
       if (accountsData) setAccounts(accountsData);
-
-      // 2.5 Fetch crypto wallets
-      const { data: cryptoWalletsData } = await supabase.from('crypto_wallets').select('*');
       if (cryptoWalletsData) setCryptoWallets(cryptoWalletsData);
-
-      // 3. Fetch transactions
-      const { data: txData } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
       if (txData) setTransactions(txData);
-
-      // 4. Fetch audit logs
-      const { data: auditData } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
       if (auditData) setAuditLogs(auditData);
 
-      // Fetch Email Audit Logs
       try {
-        const { data: emlData } = await supabase.from('email_audit_logs').select('*').order('sent_at', { ascending: false });
         if (emlData && emlData.length > 0) {
           setEmailLogs(emlData);
         } else {
@@ -147,17 +188,10 @@ export default function AdminDashboard({ user }: { user: any }) {
         setEmailLogs(getLocalEmailAuditLogs());
       }
 
-      // 5. Fetch crypto transactions
-      const { data: cryptoData } = await supabase.from('crypto_transactions').select('*');
       if (cryptoData) setCryptoTxs(cryptoData);
-
-      // 6. Fetch KYC documents
-      const { data: kycData } = await supabase.from('kyc_documents').select('*');
       if (kycData) setKycDocs(kycData);
 
-      // 7. Fetch investment plans
-      const { data: plansData } = await supabase.from('investment_plans').select('*');
-      if (plansData) setInvestmentPlans(plansData.map(p => ({
+      if (plansData) setInvestmentPlans(plansData.map((p: any) => ({
         id: p.id,
         name: p.name,
         roi: `${p.roi_percentage}%`,
@@ -167,13 +201,11 @@ export default function AdminDashboard({ user }: { user: any }) {
         active: p.is_active
       })));
 
-      // 8. Fetch market assets
-      const { data: assetsData } = await supabase.from('market_assets').select('*');
-      if (assetsData) setTradingInstruments(assetsData.map(a => ({
+      if (assetsData) setTradingInstruments(assetsData.map((a: any) => ({
         id: a.id,
         symbol: a.symbol,
         name: a.name,
-        category: 'Market', // Default category
+        category: 'Market',
         status: a.is_active ? 'Open' : 'Closed',
         spread: 'Dynamic',
         maxLeverage: '1:500'
@@ -197,6 +229,23 @@ export default function AdminDashboard({ user }: { user: any }) {
               status: p.status || 'active',
               role: p.role || 'user',
               created_at: p.created_at || new Date().toISOString()
+            });
+          }
+        });
+      }
+
+      // Also ensure users present in accounts are in userMap
+      if (accountsData && Array.isArray(accountsData)) {
+        accountsData.forEach((acc: any) => {
+          if (acc.user_id && !userMap.has(acc.user_id)) {
+            userMap.set(acc.user_id, {
+              id: acc.user_id,
+              email: `user_${acc.user_id.substring(0, 6)}@safeglobalbank.com`,
+              displayName: `User ${acc.user_id.substring(0, 6)}`,
+              kyc_status: 'verified',
+              status: 'active',
+              role: 'user',
+              created_at: new Date().toISOString()
             });
           }
         });

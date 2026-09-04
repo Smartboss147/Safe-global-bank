@@ -53,7 +53,11 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
   // Synchronous immediate initialization from localStorage cache if available
   const [wallet, setWallet] = useState<any>(() => getInitialWallet(user?.id));
   const [copied, setCopied] = useState(false);
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'receive' | 'send' | 'main_transfer' | 'history'>('portfolio');
+  const [activeTab, setActiveTab] = useState<'portfolio' | 'receive' | 'send' | 'main_transfer' | 'trading_transfer' | 'history'>('portfolio');
+  
+  // Trading Transfer state
+  const [tradingTransferAmount, setTradingTransferAmount] = useState('');
+  const [tradingTransferLoading, setTradingTransferLoading] = useState(false);
   
   // Confirmation Modal state for transfers
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -673,6 +677,114 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
     }
   };
 
+  // Form submit handler for Main Balance to Trading Account Transfer
+  const handleTradingTransferSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setMsg({ type: '', text: '' });
+
+    const val = parseFloat(tradingTransferAmount);
+    if (isNaN(val) || val <= 0) {
+      setMsg({ type: 'error', text: 'Please enter a valid transfer amount.' });
+      return;
+    }
+
+    const currentMainBal = Number(account?.balance || 0);
+    if (currentMainBal < val) {
+      setMsg({ type: 'error', text: `Insufficient main balance. Available: ${formatCurrencyAmount(currentMainBal, currInfo)}` });
+      return;
+    }
+
+    setConfirmModalDetails({
+      title: 'Confirm Transfer to Trading Account',
+      from: `Primary Bank Account (${formatCurrencyAmount(currentMainBal, currInfo)})`,
+      to: 'Trading Account Balance',
+      amount: formatCurrencyAmount(val, currInfo),
+      fee: '$0.00 (Instant & Free)',
+      type: 'main_transfer',
+      onConfirm: () => executeTradingTransfer(val)
+    });
+    setShowConfirmModal(true);
+  };
+
+  const executeTradingTransfer = async (val: number) => {
+    setConfirmLoading(true);
+    setTradingTransferLoading(true);
+
+    const currentMainBal = Number(account?.balance || 0);
+    const currentTradingBal = Number(wallet?.trading_balance || 0);
+
+    try {
+      // 1. Deduct from main bank account balance in Supabase
+      const newMainBal = currentMainBal - val;
+      if (account?.id) {
+        await supabase.from('accounts').update({ balance: newMainBal }).eq('id', account.id);
+      }
+
+      // 2. Add to trading balance in crypto_wallets
+      const newTradingBal = Number((currentTradingBal + val).toFixed(2));
+
+      const updatedWallet = {
+        ...wallet,
+        user_id: user.id,
+        trading_balance: newTradingBal
+      };
+
+      setWallet(updatedWallet);
+      try {
+        localStorage.setItem(`crypto_wallet_${user.id}`, JSON.stringify(updatedWallet));
+      } catch (e) {}
+
+      // Upsert into Supabase crypto_wallets
+      try {
+        await supabase
+          .from('crypto_wallets')
+          .upsert({
+            ...(wallet?.id ? { id: wallet.id } : {}),
+            user_id: user.id,
+            trading_balance: newTradingBal,
+            address: wallet?.address || createDefaultWallet(user.id).address
+          });
+      } catch (err) {
+        console.warn('Supabase trading balance update notice:', err);
+      }
+
+      // 3. Insert transaction log into bank transactions table for statement history
+      if (account?.id) {
+        await supabase.from('transactions').insert([{
+          user_id: user.id,
+          account_id: account.id,
+          type: 'transfer_out',
+          transfer_type: 'trading_topup',
+          amount: val,
+          recipient: 'Trading Account Balance',
+          bank_name: 'Safe Global Bank Trading Services',
+          description: `Transfer to Trading Account Balance`,
+          status: 'completed',
+          created_at: new Date().toISOString()
+        }]);
+      }
+
+      if (typeof fetchAccount === 'function') {
+        fetchAccount();
+      }
+
+      setMsg({
+        type: 'success',
+        text: `Successfully transferred ${formatCurrencyAmount(val, currInfo)} from Main Balance into your Trading Account Balance!`
+      });
+      setTradingTransferAmount('');
+      setShowConfirmModal(false);
+      setActiveTab('portfolio');
+      await fetchRecentTxs();
+    } catch (err: any) {
+      console.error('[CryptoWallet] Trading balance transfer error:', err);
+      setMsg({ type: 'error', text: 'Failed to process transfer to trading balance.' });
+    } finally {
+      setTradingTransferLoading(false);
+      setConfirmLoading(false);
+    }
+  };
+
   // PDF Receipt Download Helper
   const downloadPdfReceipt = (item: any) => {
     try {
@@ -766,6 +878,12 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
             <ArrowRightLeft size={16} /> From Main Balance
           </button>
           <button 
+            onClick={() => { setActiveTab('trading_transfer'); setMsg({type:'',text:''}); }}
+            className={`flex-1 min-w-[140px] p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'trading_transfer' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
+          >
+            <ArrowRightLeft size={16} /> To Trading Account
+          </button>
+          <button 
             onClick={() => { setActiveTab('portfolio'); setMsg({type:'',text:''}); }}
             className={`flex-1 min-w-[100px] p-3 rounded-2xl font-bold text-xs sm:text-sm transition flex items-center justify-center gap-1.5 ${activeTab === 'portfolio' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' : 'bg-white/10 hover:bg-white/20 text-white'}`}
           >
@@ -813,7 +931,15 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Trading Account Balance</p>
                 <p className="text-lg font-bold text-gray-900 mt-0.5">{formatCurrencyAmount(tradingBalance, currInfo)}</p>
               </div>
-              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Active</span>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">Active</span>
+                <button
+                  onClick={() => { setActiveTab('trading_transfer'); setMsg({ type: '', text: '' }); }}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition flex items-center gap-1 shadow-sm"
+                >
+                  <ArrowRightLeft size={13} /> Transfer
+                </button>
+              </div>
             </div>
 
             <div className="flex justify-between items-center bg-gradient-to-r from-emerald-50 via-teal-50/80 to-blue-50/60 p-4 rounded-2xl border border-emerald-100">
@@ -1155,6 +1281,96 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
                 <>
                   <Zap size={16} />
                   <span>Confirm Transfer to Crypto Wallet</span>
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {activeTab === 'trading_transfer' && (
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <ArrowRightLeft size={20} className="text-indigo-600" />
+                Transfer to Trading Account Balance
+              </h3>
+              <p className="text-xs text-gray-500 mt-0.5 font-medium">Instantly fund your trading account from your primary bank account</p>
+            </div>
+            <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-xs font-bold rounded-full flex items-center gap-1">
+              Instant Transfer
+            </span>
+          </div>
+
+          <form className="max-w-md mx-auto space-y-6" onSubmit={handleTradingTransferSubmit}>
+            <div className="p-4 bg-gradient-to-r from-indigo-900 to-slate-900 text-white rounded-2xl flex items-center justify-between shadow-md">
+              <div>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider flex items-center gap-1">
+                  <Landmark size={13} /> Source Account
+                </p>
+                <p className="text-sm font-bold text-slate-200 mt-0.5">Primary Bank Account</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Available Balance</p>
+                <p className="text-lg font-black text-emerald-400 mt-0.5">
+                  {formatCurrencyAmount(Number(account?.balance || 0), currInfo)}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between mb-2">
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">Amount ({currInfo.code || 'USD'})</label>
+                <span className="text-xs font-bold text-gray-500">
+                  Max: {formatCurrencyAmount(Number(account?.balance || 0), currInfo)}
+                </span>
+              </div>
+              <div className="relative">
+                <input 
+                  type="number" 
+                  min="0.01"
+                  step="any"
+                  value={tradingTransferAmount}
+                  onChange={e => setTradingTransferAmount(e.target.value)}
+                  className="w-full py-3.5 pl-4 pr-16 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none transition text-base" 
+                  placeholder="0.00" 
+                  required 
+                />
+                <button 
+                  type="button" 
+                  onClick={() => setTradingTransferAmount((Number(account?.balance || 0)).toString())}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs font-black text-indigo-700 hover:text-indigo-900 bg-indigo-100 px-2 py-1 rounded-lg transition"
+                >
+                  MAX
+                </button>
+              </div>
+
+              <div className="flex gap-2 mt-2">
+                {[100, 500, 1000, 5000].map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => setTradingTransferAmount(amt.toString())}
+                    className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold rounded-lg transition"
+                  >
+                    +${amt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={tradingTransferLoading}
+              className="w-full p-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 active:scale-95 transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-70 flex items-center justify-center gap-2 text-sm"
+            >
+              {tradingTransferLoading ? (
+                <span>Processing Transfer...</span>
+              ) : (
+                <>
+                  <ArrowRightLeft size={16} />
+                  <span>Confirm Transfer to Trading Account</span>
                 </>
               )}
             </button>

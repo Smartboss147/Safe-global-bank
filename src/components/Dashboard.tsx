@@ -508,16 +508,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
         </div>
       </div>
 
-      {/* Quick Transfer Forms */}
-      {accountId && (
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Quick Transfer & Deposit</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-             <TransactionForm user={user} accountId={accountId} type="deposit" onSuccess={fetchAccount} currentBalance={account?.balance} />
-             <TransactionForm user={user} accountId={accountId} type="withdrawal" onSuccess={fetchAccount} currentBalance={account?.balance} />
-          </div>
-        </div>
-      )}
+
     </div>
   );
 }

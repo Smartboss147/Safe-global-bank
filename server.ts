@@ -62,6 +62,58 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
   }
 };
 
+// API endpoint to fetch all admin data bypassing RLS
+app.get('/api/admin/all-data', verifyAdmin, async (req, res) => {
+  try {
+    const [
+      { data: countriesData },
+      { data: profilesData },
+      { data: accountsData },
+      { data: cryptoWalletsData },
+      { data: txData },
+      { data: auditData },
+      { data: emailLogsData },
+      { data: cryptoTxsData },
+      { data: kycDocsData },
+      { data: investmentPlansData },
+      { data: marketAssetsData },
+      { data: tradingAccountsData }
+    ] = await Promise.all([
+      supabaseAdmin.from('supported_countries').select('*').order('country_name'),
+      supabaseAdmin.from('profiles').select('*'),
+      supabaseAdmin.from('accounts').select('*'),
+      supabaseAdmin.from('crypto_wallets').select('*'),
+      supabaseAdmin.from('transactions').select('*').order('created_at', { ascending: false }),
+      supabaseAdmin.from('audit_logs').select('*').order('created_at', { ascending: false }),
+      supabaseAdmin.from('email_audit_logs').select('*').order('sent_at', { ascending: false }).then(res => res, () => ({ data: [] })),
+      supabaseAdmin.from('crypto_transactions').select('*'),
+      supabaseAdmin.from('kyc_documents').select('*'),
+      supabaseAdmin.from('investment_plans').select('*'),
+      supabaseAdmin.from('market_assets').select('*'),
+      supabaseAdmin.from('trading_accounts').select('*').then(res => res, () => ({ data: [] }))
+    ]);
+
+    res.json({
+      success: true,
+      countries: countriesData || [],
+      profiles: profilesData || [],
+      accounts: accountsData || [],
+      cryptoWallets: cryptoWalletsData || [],
+      transactions: txData || [],
+      auditLogs: auditData || [],
+      emailLogs: emailLogsData || [],
+      cryptoTxs: cryptoTxsData || [],
+      kycDocs: kycDocsData || [],
+      investmentPlans: investmentPlansData || [],
+      marketAssets: marketAssetsData || [],
+      tradingAccounts: tradingAccountsData || []
+    });
+  } catch (err: any) {
+    console.error('[Server Admin API Error] all-data exception:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/admin/delete-user', verifyAdmin, async (req, res) => {
   const { userId } = req.body;
   if (!userId) return res.status(400).json({ error: 'User ID required' });

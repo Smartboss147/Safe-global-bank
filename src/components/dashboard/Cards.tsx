@@ -1,8 +1,10 @@
 import { CreditCard, Snowflake, Settings2, Eye, ShieldAlert, Plane, ShoppingBag } from 'lucide-react';
 import { useState } from 'react';
+import { getUserDisplayName } from '../../utils/profile';
 
-export default function Cards() {
+export default function Cards({ user, account }: { user: any, account: any }) {
   const [activeCard, setActiveCard] = useState<'virtual' | 'physical'>('virtual');
+  const [showDetails, setShowDetails] = useState(false);
   
   const [toggles, setToggles] = useState({
     online: true,
@@ -10,6 +12,8 @@ export default function Cards() {
     international: false,
     frozen: false
   });
+
+  const cardholderName = account?.account_name || getUserDisplayName(null, user) || user?.email?.split('@')[0]?.toUpperCase() || 'JOHN DOE';
 
   return (
     <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden min-h-[80vh] pb-6">
@@ -47,21 +51,31 @@ export default function Cards() {
             
             <div className="relative z-10 space-y-4">
               <div className="flex items-center justify-between">
-                <p className="font-mono text-2xl tracking-[0.2em] font-medium opacity-90 drop-shadow-sm">
-                  {activeCard === 'virtual' ? '**** **** **** 4021' : '**** **** **** 8829'}
+                <p className="font-mono text-xl sm:text-2xl tracking-[0.2em] font-medium opacity-90 drop-shadow-sm">
+                  {showDetails 
+                    ? (activeCard === 'virtual' ? '4532 8910 4021 8829' : '5412 7500 8829 1042') 
+                    : (activeCard === 'virtual' ? '**** **** **** 4021' : '**** **** **** 8829')}
                 </p>
               </div>
+
+              {showDetails && (
+                <div className="flex gap-4 text-xs font-mono bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-lg w-max border border-white/20">
+                  <span>CVV: <strong className="text-white">{activeCard === 'virtual' ? '482' : '911'}</strong></span>
+                  <span>PIN: <strong className="text-white">{activeCard === 'virtual' ? '1984' : '3302'}</strong></span>
+                </div>
+              )}
+
               <div className="flex justify-between items-end">
                 <div>
-                  <p className="text-[10px] text-white/60 font-semibold uppercase tracking-wider mb-1">Cardholder</p>
-                  <p className="font-bold tracking-wide">JOHN DOE</p>
+                  <p className="text-[10px] text-white/60 font-semibold uppercase tracking-wider mb-1">Cardholder / Account Name</p>
+                  <p className="font-bold tracking-wide truncate max-w-[180px]">{cardholderName}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-white/60 font-semibold uppercase tracking-wider mb-1">Expires</p>
                   <p className="font-bold tracking-wide">{activeCard === 'virtual' ? '12/28' : '05/29'}</p>
                 </div>
                 <div className="w-10 h-6">
-                  {/* Master card logo mock */}
+                  {/* Mastercard logo mock */}
                   <div className="relative w-full h-full">
                     <div className="absolute right-4 w-6 h-6 bg-red-500/80 rounded-full mix-blend-multiply" />
                     <div className="absolute right-0 w-6 h-6 bg-yellow-500/80 rounded-full mix-blend-multiply" />
@@ -74,11 +88,14 @@ export default function Cards() {
 
         {/* Quick Actions */}
         <div className="grid grid-cols-4 gap-3 mb-8">
-          <button className="flex flex-col items-center justify-center gap-2 p-3 rounded-2xl bg-gray-50 hover:bg-gray-100 transition active:scale-95 text-gray-700">
-            <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center text-blue-600">
+          <button 
+            onClick={() => setShowDetails(!showDetails)}
+            className={`flex flex-col items-center justify-center gap-2 p-3 rounded-2xl transition active:scale-95 ${showDetails ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-xs' : 'bg-gray-50 hover:bg-gray-100 text-gray-700'}`}
+          >
+            <div className={`w-10 h-10 rounded-full shadow-sm flex items-center justify-center ${showDetails ? 'bg-blue-600 text-white' : 'bg-white text-blue-600'}`}>
               <Eye size={18} />
             </div>
-            <span className="text-xs font-bold">Details</span>
+            <span className="text-xs font-bold">{showDetails ? 'Hide' : 'Details'}</span>
           </button>
           <button 
             onClick={() => setToggles({...toggles, frozen: !toggles.frozen})}
