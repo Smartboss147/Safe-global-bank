@@ -2,7 +2,7 @@ import { CreditCard, Snowflake, Settings2, Eye, ShieldAlert, Plane, ShoppingBag 
 import { useState } from 'react';
 import { getUserDisplayName } from '../../utils/profile';
 
-export default function Cards({ user, account }: { user: any, account: any }) {
+export default function Cards({ user, account, userData }: { user: any, account: any, userData?: any }) {
   const [activeCard, setActiveCard] = useState<'virtual' | 'physical'>('virtual');
   const [showDetails, setShowDetails] = useState(false);
   
@@ -13,7 +13,16 @@ export default function Cards({ user, account }: { user: any, account: any }) {
     frozen: false
   });
 
-  const cardholderName = account?.account_name || getUserDisplayName(null, user) || user?.email?.split('@')[0]?.toUpperCase() || 'JOHN DOE';
+  const rawName = 
+    account?.account_name || 
+    userData?.full_name || 
+    userData?.display_name || 
+    (userData?.first_name ? `${userData.first_name} ${userData.last_name || ''}`.trim() : null) ||
+    user?.user_metadata?.full_name || 
+    user?.user_metadata?.name ||
+    getUserDisplayName(userData, user);
+
+  const cardholderName = (rawName && !rawName.includes('@') && rawName !== 'Valued Customer') ? rawName.toUpperCase() : 'ERIGA BOSS';
 
   return (
     <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden min-h-[80vh] pb-6">

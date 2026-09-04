@@ -179,7 +179,7 @@ export default function Dashboard({ user }: { user: any }) {
       case 'crypto': return <div className="p-4"><CryptoWallet user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'trading': return <div className="p-4"><TradingPlatform user={user} account={account} /></div>;
       case 'payments': return <div className="p-4"><Payments user={user} account={account} fetchAccount={fetchAccount} /></div>;
-      case 'cards': return <div className="p-4"><Cards user={user} account={account} /></div>;
+      case 'cards': return <div className="p-4"><Cards user={user} account={account} userData={userData} /></div>;
       case 'savings': return <div className="p-4"><Savings user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'investments': return <div className="p-4"><Investments user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'loans': return <div className="p-4"><Loans user={user} account={account} fetchAccount={fetchAccount} /></div>;
@@ -424,7 +424,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
               {showBalance ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
-          <h1 className="text-[2.5rem] font-bold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
             {showBalance ? formatCurrencyAmount(account?.balance, account?.currency_code || account?.currency || userData?.currency_code || userData?.currency || userData?.country, { includeCode: true }) : '••••••••'}
           </h1>
         </div>

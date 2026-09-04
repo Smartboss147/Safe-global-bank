@@ -178,6 +178,8 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   const assignedCurrencyCode = existingProfileInDb?.currency_code || existingProfileInDb?.currency || signupFields.currency || signupFields.currency_code || detectedCurrencyObj.code;
   const assignedCurrencySymbol = existingProfileInDb?.currency_symbol || signupFields.currency_symbol || detectedCurrencyObj.symbol;
 
+  const existingPhoto = existingProfileInDb?.photo_url || existingProfileInDb?.photoURL || existingProfileInDb?.avatar_url || existingLocal.photo_url || existingLocal.photoURL || existingLocal.avatar_url || userObj.user_metadata?.avatar_url || '';
+
   const profileRecord = {
     id: userId,
     email,
@@ -198,6 +200,9 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
     role,
     status,
     kyc_status: kycStatus,
+    photo_url: existingPhoto,
+    photoURL: existingPhoto,
+    avatar_url: existingPhoto,
     created_at: existingProfileInDb?.created_at || existingLocal.created_at || userObj.created_at || new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
@@ -372,11 +377,16 @@ export const loadUserProfile = async (userId: string, userAuthData?: any) => {
 
   const localProfile = userId ? JSON.parse(localStorage.getItem(`local_profile_${userId}`) || '{}') : {};
 
+  const existingPhoto = profileFromDb?.photo_url || profileFromDb?.photoURL || profileFromDb?.avatar_url || localProfile?.photo_url || localProfile?.photoURL || localProfile?.avatar_url || userAuthData?.user_metadata?.avatar_url || '';
+
   // Database values from Supabase take STRICT PRECEDENCE over local cache
   const combined = {
     ...(userAuthData || {}),
     ...(localProfile || {}),
     ...(profileFromDb || {}),
+    photo_url: existingPhoto,
+    photoURL: existingPhoto,
+    avatar_url: existingPhoto,
     account: accountFromDb || localProfile.account || null
   };
 
