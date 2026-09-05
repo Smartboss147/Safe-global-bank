@@ -205,18 +205,22 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
         }
       }
 
-      const referenceId = senderTx?.id || `TXN-${Math.floor(100000 + Math.random() * 900000)}`;
+      const now = new Date();
+      const referenceId = senderTx?.id ? `TXN-${senderTx.id.slice(0, 8).toUpperCase()}` : `TXN-${Math.floor(100000 + Math.random() * 900000)}`;
 
       const receipt = {
         id: referenceId,
+        rawId: senderTx?.id || '',
         senderEmail: user.email,
-        senderAccount: account.account_number || account.accountNumber || 'Primary Checking',
+        senderAccount: `****${(account.account_number || account.accountNumber || '0597').slice(-4)}`,
         recipient: recipient.trim(),
         amount: val,
+        currency: currInfo.code || 'USD',
         type: transferType,
         bankName: bankName || 'Safe Global Bank Network',
-        status: txStatus,
-        date: new Date().toLocaleString()
+        status: txStatus === 'completed' ? 'Successful' : 'Pending Verification',
+        date: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
 
       setReceiptData(receipt);
@@ -269,31 +273,35 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
     try {
       const doc = new jsPDF();
       doc.setFillColor(10, 61, 54);
-      doc.rect(0, 0, 210, 30, 'F');
+      doc.rect(0, 0, 210, 35, 'F');
 
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(18);
-      doc.text('Safe Global Bank Official Transfer Receipt', 14, 20);
+      doc.setFontSize(16);
+      doc.text('SAFE GLOBAL BANK', 14, 18);
+      doc.setFontSize(10);
+      doc.text('OFFICIAL TRANSFER RECEIPT', 14, 26);
 
       doc.setTextColor(40, 40, 40);
       doc.setFontSize(10);
-      doc.text(`Transaction Reference: ${receiptData.id}`, 14, 40);
-      doc.text(`Date & Time: ${receiptData.date}`, 14, 46);
+      doc.text(`Transaction Reference: ${receiptData.id}`, 14, 45);
+      doc.text(`Date & Time: ${receiptData.date} at ${receiptData.time}`, 14, 52);
+      doc.text(`Status: ${receiptData.status.toUpperCase()}`, 14, 59);
 
       autoTable(doc, {
-        startY: 54,
-        head: [['Field', 'Details']],
+        startY: 68,
+        head: [['Transaction Detail', 'Specification']],
         body: [
-          ['Sender Email', receiptData.senderEmail],
-          ['Sender Account', receiptData.senderAccount],
-          ['Recipient', receiptData.recipient],
-          ['Bank / Network', receiptData.bankName],
-          ['Transfer Type', receiptData.type.toUpperCase()],
-          ['Amount Transferred', formatCurrencyAmount(receiptData.amount, currInfo, { includeCode: true })],
-          ['Status', receiptData.status.toUpperCase()]
+          ['Transfer Status', receiptData.status.toUpperCase()],
+          ['Amount Transferred', `${formatCurrencyAmount(receiptData.amount, currInfo, { includeCode: true })}`],
+          ['Transfer Type', receiptData.type.replace('_', ' ').toUpperCase()],
+          ['From Account (Sender)', receiptData.senderAccount],
+          ['To Recipient', receiptData.recipient],
+          ['Destination Network', receiptData.bankName],
+          ['Transaction Reference', receiptData.id],
+          ['Transaction ID', receiptData.rawId || 'N/A']
         ],
         headStyles: { fillColor: [10, 61, 54] },
-        styles: { fontSize: 10 }
+        styles: { fontSize: 10, cellPadding: 5 }
       });
 
       doc.save(`SafeGlobalBank_Transfer_${receiptData.id}.pdf`);
@@ -361,28 +369,80 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
         </div>
       )}
 
-      {status === 'success' && (
-        <div className="p-5 bg-emerald-50 border border-emerald-100 rounded-2xl space-y-3">
-          <div className="flex items-center gap-3 text-emerald-800 font-bold text-sm">
-            <CheckCircle2 size={22} className="text-emerald-600 shrink-0" />
-            <span>{message}</span>
-          </div>
-          {receiptData && (
-            <div className="pt-2 flex flex-wrap gap-2 items-center justify-between border-t border-emerald-200/60">
-              <span className="text-xs font-mono text-emerald-900 font-semibold">Ref: {receiptData.id}</span>
-              <button
-                onClick={downloadReceiptPDF}
-                className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
-              >
-                <Download size={14} /> Download Receipt PDF
-              </button>
+      {/* Professional Transfer Success Confirmation Card */}
+      {status === 'success' && receiptData ? (
+        <div className="bg-white rounded-[2rem] p-6 sm:p-8 border border-emerald-200 shadow-xl space-y-6 animate-in fade-in zoom-in-95">
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 bg-emerald-100 text-emerald-700 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <CheckCircle2 size={36} />
             </div>
-          )}
-        </div>
-      )}
+            <div>
+              <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-extrabold uppercase rounded-full tracking-wider">
+                Transfer Successful
+              </span>
+              <h3 className="text-3xl font-black text-gray-900 mt-2 font-mono">
+                {formatCurrencyAmount(receiptData.amount, currInfo, { includeCode: true })}
+              </h3>
+              <p className="text-xs text-gray-500 font-medium mt-1">
+                Successfully transferred to <span className="font-bold text-gray-800">{receiptData.recipient}</span>
+              </p>
+            </div>
+          </div>
 
-      {/* Main Transfer Form */}
-      <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 divide-y divide-gray-200/60 text-xs">
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-gray-500 font-medium">Transfer Status</span>
+              <span className="font-bold text-emerald-600 uppercase tracking-wider">{receiptData.status}</span>
+            </div>
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-gray-500 font-medium">Transfer Type</span>
+              <span className="font-bold text-gray-900 capitalize">{receiptData.type.replace('_', ' ')}</span>
+            </div>
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-gray-500 font-medium">Transaction Reference</span>
+              <span className="font-mono font-bold text-[#0A3D36]">{receiptData.id}</span>
+            </div>
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-gray-500 font-medium">Date &amp; Time</span>
+              <span className="font-bold text-gray-800">{receiptData.date} at {receiptData.time}</span>
+            </div>
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-gray-500 font-medium">From Account</span>
+              <span className="font-mono font-bold text-gray-800">{receiptData.senderAccount}</span>
+            </div>
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-gray-500 font-medium">Recipient / Destination</span>
+              <span className="font-mono font-bold text-gray-800 truncate max-w-[200px]">{receiptData.recipient}</span>
+            </div>
+            {receiptData.rawId && (
+              <div className="py-2.5 flex justify-between items-center">
+                <span className="text-gray-500 font-medium">Transaction ID</span>
+                <span className="font-mono text-[10px] text-gray-500">{receiptData.rawId}</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <button
+              onClick={downloadReceiptPDF}
+              className="py-3.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition"
+            >
+              <Download size={16} /> Download Receipt PDF
+            </button>
+            <button
+              onClick={() => {
+                setStatus('idle');
+                setReceiptData(null);
+                setMessage('');
+              }}
+              className="py-3.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition"
+            >
+              <RefreshCw size={14} /> Make Another Transfer
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form onSubmit={handleSubmit} className="space-y-5">
         {/* Recipient Field */}
         <div>
           <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
@@ -513,6 +573,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
           </button>
         </div>
       </form>
+      )}
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
