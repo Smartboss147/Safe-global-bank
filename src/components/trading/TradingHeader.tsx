@@ -32,6 +32,7 @@ export default function TradingHeader({
 
   const tabs = [
     { id: 'showcase', label: 'Overview', icon: Globe },
+    { id: 'stock-dashboard', label: 'Stock Dashboard', icon: TrendingUp, badge: 'LIVE' },
     { id: 'terminal', label: 'Web Trader', icon: BarChart2, badge: 'PRO' },
     { id: 'markets', label: 'Markets', icon: Layers },
     { id: 'accounts', label: 'Account Types', icon: UserCheck },

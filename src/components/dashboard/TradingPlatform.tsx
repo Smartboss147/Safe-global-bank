@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import TradingHeader from '../trading/TradingHeader';
-import ShowcaseLanding from '../trading/ShowcaseLanding';
+import TradingDashboard from '../trading/TradingDashboard';
+import StockMarketDashboard from '../trading/StockMarketDashboard';
 import LiveTerminal from '../trading/LiveTerminal';
 import MarketsView from '../trading/MarketsView';
 import AccountTypesView from '../trading/AccountTypesView';
@@ -10,7 +11,7 @@ import TradingToolsView from '../trading/TradingToolsView';
 import EducationFAQView from '../trading/EducationFAQView';
 
 export default function TradingPlatform({ user, account }: { user: any; account: any }) {
-  const [activeTab, setActiveTab] = useState<string>('terminal');
+  const [activeTab, setActiveTab] = useState<string>('showcase');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [liveEquity, setLiveEquity] = useState<number>(account?.balance || 1000);
   const [selectedAccount, setSelectedAccount] = useState<any>(account);
@@ -44,11 +45,19 @@ export default function TradingPlatform({ user, account }: { user: any; account:
       {/* Main Tab Content */}
       <main className="max-w-7xl mx-auto px-4 py-6">
         {activeTab === 'showcase' && (
-          <ShowcaseLanding
-            onStartTrading={() => setActiveTab('terminal')}
-            onExploreMarkets={() => setActiveTab('markets')}
-            onOpenAccount={() => setActiveTab('accounts')}
-            onViewPlatforms={() => setActiveTab('platforms')}
+          <TradingDashboard
+            user={user}
+            account={account}
+            setActiveTab={setActiveTab}
+            isDarkMode={isDarkMode}
+          />
+        )}
+
+        {activeTab === 'stock-dashboard' && (
+          <StockMarketDashboard
+            user={user}
+            account={account}
+            isDarkMode={isDarkMode}
           />
         )}
 

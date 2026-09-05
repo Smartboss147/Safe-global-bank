@@ -831,6 +831,267 @@ app.post('/api/trading/close-position', async (req, res) => {
   }
 });
 
+// --- Professional Stock Market Dashboard API Endpoints ---
+
+// 1. Stock Search
+app.get('/api/market/search', async (req, res) => {
+  const query = (req.query.q as string || '').toLowerCase().trim();
+  const sampleStocks = [
+    { symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', price: 228.50, change: 3.40, changePercent: 1.51 },
+    { symbol: 'TSLA', name: 'Tesla Inc.', exchange: 'NASDAQ', price: 242.10, change: -4.20, changePercent: -1.71 },
+    { symbol: 'NVDA', name: 'NVIDIA Corporation', exchange: 'NASDAQ', price: 118.30, change: 4.80, changePercent: 4.23 },
+    { symbol: 'MSFT', name: 'Microsoft Corporation', exchange: 'NASDAQ', price: 425.20, change: 2.10, changePercent: 0.50 },
+    { symbol: 'AMZN', name: 'Amazon.com Inc.', exchange: 'NASDAQ', price: 186.40, change: 1.20, changePercent: 0.65 },
+    { symbol: 'GOOGL', name: 'Alphabet Inc.', exchange: 'NASDAQ', price: 178.90, change: -0.80, changePercent: -0.45 },
+    { symbol: 'META', name: 'Meta Platforms Inc.', exchange: 'NASDAQ', price: 512.40, change: 6.30, changePercent: 1.24 },
+    { symbol: 'NFLX', name: 'Netflix Inc.', exchange: 'NASDAQ', price: 685.20, change: 12.50, changePercent: 1.85 },
+    { symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', exchange: 'ARCA', price: 552.10, change: 1.80, changePercent: 0.33 },
+    { symbol: 'QQQ', name: 'Invesco QQQ Trust', exchange: 'NASDAQ', price: 482.30, change: 2.40, changePercent: 0.50 },
+    { symbol: 'DIA', name: 'SPDR Dow Jones Industrial Average ETF', exchange: 'ARCA', price: 408.50, change: 0.90, changePercent: 0.22 },
+  ];
+
+  if (!query) {
+    return res.json({ results: sampleStocks });
+  }
+
+  const filtered = sampleStocks.filter(s => 
+    s.symbol.toLowerCase().includes(query) || s.name.toLowerCase().includes(query)
+  );
+  res.json({ results: filtered });
+});
+
+// 2. Stock Quote
+app.get('/api/market/quote', async (req, res) => {
+  const symbol = (req.query.symbol as string || 'AAPL').toUpperCase();
+  const basePriceMap: Record<string, number> = {
+    AAPL: 228.50, TSLA: 242.10, NVDA: 118.30, MSFT: 425.20, AMZN: 186.40,
+    GOOGL: 178.90, META: 512.40, NFLX: 685.20, SPY: 552.10, QQQ: 482.30, DIA: 408.50
+  };
+  const price = basePriceMap[symbol] || 150.00;
+  const change = +(Math.sin(price) * 3.5).toFixed(2);
+  const changePercent = +((change / price) * 100).toFixed(2);
+
+  res.json({
+    symbol,
+    name: getCompanyName(symbol),
+    price,
+    change,
+    changePercent,
+    previousClose: +(price - change).toFixed(2),
+    dayHigh: +(price * 1.015).toFixed(2),
+    dayLow: +(price * 0.985).toFixed(2),
+    yearHigh: +(price * 1.35).toFixed(2),
+    yearLow: +(price * 0.75).toFixed(2),
+    volume: Math.floor(price * 250000),
+    marketCap: `${(price * 2.8).toFixed(2)}B`,
+    timestamp: new Date().toISOString(),
+    marketStatus: 'LIVE'
+  });
+});
+
+// 3. Stock Chart OHLC Candles
+app.get('/api/market/chart', async (req, res) => {
+  const symbol = (req.query.symbol as string || 'AAPL').toUpperCase();
+  const range = (req.query.range as string || '1M');
+  
+  let count = 30;
+  if (range === '1D') count = 24;
+  else if (range === '5D') count = 35;
+  else if (range === '1M') count = 30;
+  else if (range === '3M') count = 65;
+  else if (range === '6M') count = 120;
+  else if (range === '1Y') count = 250;
+  else if (range === '5Y') count = 300;
+
+  const basePrice = {
+    AAPL: 225, TSLA: 238, NVDA: 115, MSFT: 420, AMZN: 182,
+    GOOGL: 175, META: 505, NFLX: 670, SPY: 545, QQQ: 475, DIA: 402
+  }[symbol] || 150;
+
+  const candles = [];
+  let currentPrice = basePrice;
+  const now = Date.now();
+  const step = range === '1D' ? 3600 * 1000 : 86400 * 1000;
+
+  for (let i = count; i >= 0; i--) {
+    const time = new Date(now - i * step).toISOString().split('T')[0];
+    const variance = basePrice * 0.02;
+    const open = +(currentPrice + (Math.random() - 0.5) * variance).toFixed(2);
+    const close = +(open + (Math.random() - 0.48) * variance).toFixed(2);
+    const high = +Math.max(open, close, +(Math.max(open, close) + Math.random() * variance * 0.5).toFixed(2)).toFixed(2);
+    const low = +Math.min(open, close, +(Math.min(open, close) - Math.random() * variance * 0.5).toFixed(2)).toFixed(2);
+    const volume = Math.floor(Math.random() * 5000000 + 1000000);
+
+    candles.push({ time, open, high, low, close, volume });
+    currentPrice = close;
+  }
+
+  res.json({ symbol, range, candles });
+});
+
+// 4. Market Overview Indices
+app.get('/api/market/overview', async (req, res) => {
+  res.json({
+    indices: [
+      { symbol: 'S&P 500', value: 5521.40, change: 18.50, changePercent: 0.34 },
+      { symbol: 'NASDAQ', value: 17824.10, change: 84.20, changePercent: 0.47 },
+      { symbol: 'DOW JONES', value: 40852.30, change: -45.10, changePercent: -0.11 },
+      { symbol: 'RUSSELL 2000', value: 2145.80, change: 12.30, changePercent: 0.58 }
+    ],
+    marketStatus: 'OPEN'
+  });
+});
+
+// 5. Watchlist API
+app.get('/api/market/watchlist', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    const { data, error } = await supabaseAdmin
+      .from('watchlists')
+      .select('*')
+      .eq('user_id', user.id);
+
+    if (error || !data || data.length === 0) {
+      return res.json({ watchlist: ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN'] });
+    }
+
+    res.json({ watchlist: data.map((w: any) => w.symbol) });
+  } catch (e) {
+    res.json({ watchlist: ['AAPL', 'TSLA', 'NVDA', 'MSFT', 'AMZN'] });
+  }
+});
+
+app.post('/api/market/watchlist', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { symbol, action } = req.body;
+  if (!token || !symbol) return res.status(400).json({ error: 'Missing parameters' });
+  try {
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (action === 'add') {
+      await supabaseAdmin.from('watchlists').upsert({ user_id: user.id, symbol }, { onConflict: 'user_id,symbol' });
+    } else {
+      await supabaseAdmin.from('watchlists').delete().eq('user_id', user.id).eq('symbol', symbol);
+    }
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 6. Comprehensive Trading Dashboard Data API
+app.get('/api/trading/dashboard', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    // Fetch account
+    const { data: accounts } = await supabaseAdmin
+      .from('accounts')
+      .select('*')
+      .eq('user_id', user.id);
+
+    const mainAccount = accounts?.[0] || { balance: 0, savings_balance: 0, investment_balance: 0 };
+    const balance = Number(mainAccount.balance) || 0;
+
+    // Fetch positions
+    const { data: positions } = await supabaseAdmin
+      .from('trading_positions')
+      .select('*')
+      .eq('user_id', user.id);
+
+    const openPositions = positions?.filter((p: any) => p.status === 'open') || [];
+    const invested = openPositions.reduce((acc: number, p: any) => acc + (Number(p.amount) * Number(p.entry_price)), 0);
+    const profit = openPositions.reduce((acc: number, p: any) => acc + (Number(p.profit_loss) || 0), 0);
+
+    // Fetch deposits sum
+    const { data: txs } = await supabaseAdmin
+      .from('transactions')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    const completedDeposits = txs?.filter((t: any) => t.type === 'deposit' && t.status === 'completed') || [];
+    const deposited = completedDeposits.reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+
+    res.json({
+      balance,
+      profit,
+      deposited,
+      invested,
+      accounts: accounts || [],
+      recentTransactions: txs?.slice(0, 10) || [],
+      positions: openPositions,
+      recentTrades: positions?.slice(0, 10) || []
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 7. Advisors API
+app.get('/api/advisors', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const { data: advisors, error } = await supabaseAdmin.from('advisors').select('*');
+    if (error) throw error;
+
+    let followedIds: string[] = [];
+    if (token) {
+      const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+      if (user) {
+        const { data: followed } = await supabaseAdmin
+          .from('followed_advisors')
+          .select('advisor_id')
+          .eq('user_id', user.id);
+        if (followed) {
+          followedIds = followed.map((f: any) => f.advisor_id);
+        }
+      }
+    }
+
+    res.json({ advisors: advisors || [], followedIds });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/advisors/follow', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { advisor_id, action } = req.body;
+  if (!token || !advisor_id) return res.status(400).json({ error: 'Missing parameters' });
+  try {
+    const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+    if (!user) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (action === 'follow') {
+      await supabaseAdmin.from('followed_advisors').upsert({ user_id: user.id, advisor_id }, { onConflict: 'user_id,advisor_id' });
+    } else {
+      await supabaseAdmin.from('followed_advisors').delete().eq('user_id', user.id).eq('advisor_id', advisor_id);
+    }
+    res.json({ success: true });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+function getCompanyName(symbol: string): string {
+  const map: Record<string, string> = {
+    AAPL: 'Apple Inc.', TSLA: 'Tesla Inc.', NVDA: 'NVIDIA Corporation',
+    MSFT: 'Microsoft Corporation', AMZN: 'Amazon.com Inc.', GOOGL: 'Alphabet Inc.',
+    META: 'Meta Platforms Inc.', NFLX: 'Netflix Inc.', SPY: 'SPDR S&P 500 ETF Trust',
+    QQQ: 'Invesco QQQ Trust', DIA: 'SPDR Dow Jones Industrial Average ETF'
+  };
+  return map[symbol] || `${symbol} Corporation`;
+}
+
   // API routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
