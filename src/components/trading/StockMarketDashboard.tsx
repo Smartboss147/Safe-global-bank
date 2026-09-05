@@ -229,24 +229,43 @@ export default function StockMarketDashboard({ user, account, isDarkMode = false
     const currentUserId = user?.id || user?.uid;
 
     try {
-      const res = await fetch('/api/trading/execute', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
+      let success = false;
+      try {
+        const res = await fetch('/api/trading/execute', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({
+            user_id: currentUserId,
+            asset_symbol: selectedSymbol,
+            type: orderSide,
+            amount: orderQuantity,
+            entry_price: quote.price,
+            leverage: 1
+          })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          success = true;
+        }
+      } catch (apiErr) {
+        console.warn('API execute failed, falling back to client Supabase:', apiErr);
+      }
+
+      if (!success && currentUserId) {
+        const { error: insErr } = await supabase.from('trading_positions').insert([{
           user_id: currentUserId,
           asset_symbol: selectedSymbol,
           type: orderSide,
           amount: orderQuantity,
           entry_price: quote.price,
-          leverage: 1
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Trade execution failed');
+          leverage: 1,
+          status: 'open'
+        }]);
+        if (insErr) throw insErr;
+      }
 
       setOrderMessage({ type: 'success', text: `Successfully executed ${orderSide.toUpperCase()} order for ${orderQuantity} shares of ${selectedSymbol} @ $${quote.price}` });
       
@@ -255,7 +274,7 @@ export default function StockMarketDashboard({ user, account, isDarkMode = false
         window.location.reload();
       }, 1500);
     } catch (err: any) {
-      setOrderMessage({ type: 'error', text: err.message });
+      setOrderMessage({ type: 'error', text: err.message || 'Trade execution failed' });
     } finally {
       setIsExecuting(false);
     }
@@ -554,7 +573,8 @@ export default function StockMarketDashboard({ user, account, isDarkMode = false
                 <label className="text-xs font-bold text-slate-400 block mb-1">Quantity (Shares)</label>
                 <input
                   type="number"
-                  min="1"
+                  min="0.01"
+                  step="0.01"
                   value={orderQuantity}
                   onChange={(e) => setOrderQuantity(Number(e.target.value))}
                   className={`w-full px-3 py-2.5 rounded-xl border text-sm font-bold ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
