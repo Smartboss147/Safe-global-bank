@@ -162,40 +162,36 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
     fetchTrades();
   }, [fetchTrades]);
 
-  // Generate dynamic candles
+  // Fetch Real Market Data
   useEffect(() => {
-    const activeMarket = markets.find(m => m.symbol === selectedSymbol) || markets[0];
-    const basePrice = activeMarket.price;
-    const newCandles = [];
-    let current = basePrice * 0.94;
-    const now = new Date();
-    for (let i = 20; i >= 0; i--) {
-      const timeStr = new Date(now.getTime() - i * 300000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const deltaPercent = (Math.random() - 0.47) * 0.005;
-      const open = current;
-      const close = open * (1 + deltaPercent);
-      const high = Math.max(open, close) * (1 + Math.random() * 0.002);
-      const low = Math.min(open, close) * (1 - Math.random() * 0.002);
-      current = close;
-      newCandles.push({
-        time: timeStr,
-        open: Number(open.toFixed(basePrice > 100 ? 2 : 4)),
-        close: Number(close.toFixed(basePrice > 100 ? 2 : 4)),
-        high: Number(high.toFixed(basePrice > 100 ? 2 : 4)),
-        low: Number(low.toFixed(basePrice > 100 ? 2 : 4)),
-        isUp: close >= open,
-        openClose: [Math.min(open, close), Math.max(open, close)]
-      });
-    }
-    // Append current live tick
-    newCandles[newCandles.length - 1].close = activeMarket.price;
-    if (activeMarket.price > newCandles[newCandles.length - 1].high) newCandles[newCandles.length - 1].high = activeMarket.price;
-    if (activeMarket.price < newCandles[newCandles.length - 1].low) newCandles[newCandles.length - 1].low = activeMarket.price;
-    newCandles[newCandles.length - 1].isUp = activeMarket.price >= newCandles[newCandles.length - 1].open;
-    newCandles[newCandles.length - 1].openClose = [Math.min(newCandles[newCandles.length - 1].open, activeMarket.price), Math.max(newCandles[newCandles.length - 1].open, activeMarket.price)];
-    
-    setCandles(newCandles);
-  }, [selectedSymbol, markets[0]?.price]); // Re-render chart roughly on some ticks, or just on symbol change for performance. To prevent heavy re-renders, we only depend on selectedSymbol
+    const fetchCandles = async () => {
+      // Map Forex symbols if needed for the API
+      let apiSymbol = selectedSymbol;
+      if (selectedSymbol.includes('/')) {
+        apiSymbol = selectedSymbol.replace('/', '');
+      }
+
+      try {
+        const res = await fetch(`/api/market/chart?symbol=${apiSymbol}&range=${timeframe === 'D1' ? '1M' : '1D'}`);
+        const data = await res.json();
+        if (data.candles && data.candles.length > 0) {
+          const mappedCandles = data.candles.map((c: any) => ({
+            ...c,
+            time: c.time.includes('T') ? new Date(c.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : c.time,
+            isUp: c.close >= c.open,
+            openClose: [Math.min(c.open, c.close), Math.max(c.open, c.close)]
+          }));
+          setCandles(mappedCandles);
+        }
+      } catch (err) {
+        console.error('Error fetching terminal candles:', err);
+      }
+    };
+
+    fetchCandles();
+    const interval = setInterval(fetchCandles, 60000); // Refresh every minute
+    return () => clearInterval(interval);
+  }, [selectedSymbol, timeframe]);
 
   const activeMarket = markets.find(m => m.symbol === selectedSymbol) || markets[0];
   

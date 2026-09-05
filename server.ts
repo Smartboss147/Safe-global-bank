@@ -26,7 +26,17 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) return res.status(401).json({ error: 'Invalid token' });
     
-    // 1. Check if user is in admins table
+    // Authorized admin user check: safeglobaladmin@gmail.com with ID 5f0f9f87-826d-4103-82b2-41094857b76b
+    const isAuthorizedAdmin = 
+      user.id === '5f0f9f87-826d-4103-82b2-41094857b76b' || 
+      user.email?.toLowerCase() === 'safeglobaladmin@gmail.com';
+
+    if (isAuthorizedAdmin) {
+      req.admin = user;
+      return next();
+    }
+
+    // 1. Verify ID against public.admins table
     const { data: adminData } = await supabaseAdmin
       .from('admins')
       .select('user_id')
@@ -38,7 +48,7 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
       return next();
     }
 
-    // 2. Check if user's role in profiles is admin
+    // 2. Query public.profiles to check admin role or email
     const { data: profileData } = await supabaseAdmin
       .from('profiles')
       .select('role, email')
@@ -47,6 +57,7 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
 
     if (
       profileData?.role === 'admin' ||
+      profileData?.role === 'SUPER_ADMIN' ||
       profileData?.email?.toLowerCase().includes('admin') ||
       user.email?.toLowerCase().includes('admin')
     ) {
@@ -54,10 +65,9 @@ const verifyAdmin = async (req: any, res: any, next: any) => {
       return next();
     }
 
-    // Default fallback: allow if authorization header token exists and admin route is invoked
-    req.admin = user;
-    return next();
+    return res.status(403).json({ error: 'Unauthorized: Admin access required' });
   } catch (err) {
+    console.error('[verifyAdmin Error]:', err);
     res.status(500).json({ error: 'Internal server error verifying admin' });
   }
 };
@@ -997,6 +1007,49 @@ app.get('/api/market/quote', async (req, res) => {
 app.get('/api/market/chart', async (req, res) => {
   const symbol = (req.query.symbol as string || 'AAPL').toUpperCase();
   const range = (req.query.range as string || '1M');
+  const finnhubKey = process.env.FINNHUB_API_KEY;
+
+  if (finnhubKey) {
+    try {
+      // Resolve range to Finnhub parameters (approximate)
+      let resolution = 'D'; // Daily
+      let from = Math.floor(Date.now() / 1000) - (30 * 24 * 3600); // 30 days ago
+      
+      if (range === '1D') {
+        resolution = '15'; // 15 min
+        from = Math.floor(Date.now() / 1000) - (24 * 3600);
+      } else if (range === '5D') {
+        resolution = '60'; // 60 min
+        from = Math.floor(Date.now() / 1000) - (5 * 24 * 3600);
+      } else if (range === '1Y') {
+        resolution = 'W'; // Weekly
+        from = Math.floor(Date.now() / 1000) - (365 * 24 * 3600);
+      } else if (range === '5Y') {
+        resolution = 'M'; // Monthly
+        from = Math.floor(Date.now() / 1000) - (5 * 365 * 24 * 3600);
+      }
+
+      const to = Math.floor(Date.now() / 1000);
+      const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${finnhubKey}`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.s === 'ok') {
+        const candles = data.t.map((t: number, i: number) => ({
+          time: new Date(t * 1000).toISOString().split('T')[0],
+          open: data.o[i],
+          high: data.h[i],
+          low: data.l[i],
+          close: data.c[i],
+          volume: data.v[i]
+        }));
+        return res.json({ symbol, range, candles });
+      }
+    } catch (err) {
+      console.warn('Finnhub fetch failed, falling back to mock:', err);
+    }
+  }
   
   let count = 30;
   if (range === '1D') count = 24;
@@ -1099,9 +1152,14 @@ app.get('/api/trading/dashboard', async (req, res) => {
     }
 
     if (!userId) {
-      const { data: profiles } = await supabaseAdmin.from('profiles').select('id').limit(1);
-      if (profiles && profiles.length > 0) {
-        userId = profiles[0].id;
+      // Fallback: try to find the first user in the system if no user is provided (for demo/dev purposes)
+      try {
+        const { data: profiles } = await supabaseAdmin.from('profiles').select('id').limit(1);
+        if (profiles && profiles.length > 0) {
+          userId = profiles[0].id;
+        }
+      } catch (e) {
+        console.warn('Profile fetch failed, using mock data');
       }
     }
 
@@ -1118,52 +1176,67 @@ app.get('/api/trading/dashboard', async (req, res) => {
       });
     }
 
-    // Fetch account
+    // Fetch account with robust error handling
     let accounts: any[] = [];
     try {
-      const { data } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from('accounts')
         .select('*')
         .eq('user_id', userId);
-      if (data) accounts = data;
+      
+      if (error) {
+        console.warn(`Accounts table error for user ${userId}:`, error.message);
+      } else if (data) {
+        accounts = data;
+      }
     } catch (err) {
-      console.warn('Accounts fetch warning:', err);
+      console.warn('Accounts fetch exception:', err);
     }
 
-    const mainAccount = accounts?.[0] || { balance: 10000, savings_balance: 0, investment_balance: 0 };
+    const mainAccount = accounts?.[0] || { balance: 10000, currency: 'USD' };
     const balance = Number(mainAccount.balance) || 10000;
 
-    // Fetch positions
+    // Fetch positions with robust error handling
     let positions: any[] = [];
     try {
-      const { data } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from('trading_positions')
         .select('*')
         .eq('user_id', userId);
-      if (data) positions = data;
+      
+      if (error) {
+        console.warn(`Trading positions table error for user ${userId}:`, error.message);
+      } else if (data) {
+        positions = data;
+      }
     } catch (err) {
-      console.warn('Trading positions fetch warning:', err);
+      console.warn('Trading positions fetch exception:', err);
     }
 
-    const openPositions = positions?.filter((p: any) => p.status === 'open') || [];
-    const invested = openPositions.reduce((acc: number, p: any) => acc + (Number(p.amount) * Number(p.entry_price)), 0);
+    const openPositions = (positions || []).filter((p: any) => p && p.status === 'open');
+    const invested = openPositions.reduce((acc: number, p: any) => acc + (Number(p.amount || 0) * Number(p.entry_price || 0)), 0);
     const profit = openPositions.reduce((acc: number, p: any) => acc + (Number(p.profit_loss) || 0), 0);
 
-    // Fetch transactions
+    // Fetch transactions with robust error handling
     let txs: any[] = [];
     try {
-      const { data } = await supabaseAdmin
+      const { data, error } = await supabaseAdmin
         .from('transactions')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
-      if (data) txs = data;
+      
+      if (error) {
+        console.warn(`Transactions table error for user ${userId}:`, error.message);
+      } else if (data) {
+        txs = data;
+      }
     } catch (err) {
-      console.warn('Transactions fetch warning:', err);
+      console.warn('Transactions fetch exception:', err);
     }
 
-    const completedDeposits = txs?.filter((t: any) => t.type === 'deposit' && t.status === 'completed') || [];
-    const deposited = completedDeposits.reduce((acc: number, t: any) => acc + Number(t.amount), 0);
+    const completedDeposits = (txs || []).filter((t: any) => t && t.type === 'deposit' && t.status === 'completed');
+    const deposited = completedDeposits.reduce((acc: number, t: any) => acc + Number(t.amount || 0), 0);
 
     res.json({
       balance,
@@ -1171,9 +1244,9 @@ app.get('/api/trading/dashboard', async (req, res) => {
       deposited,
       invested,
       accounts: accounts.length > 0 ? accounts : [mainAccount],
-      recentTransactions: txs?.slice(0, 10) || [],
+      recentTransactions: (txs || []).slice(0, 10),
       positions: openPositions,
-      recentTrades: positions?.slice(0, 10) || []
+      recentTrades: (positions || []).slice(0, 10)
     });
   } catch (e: any) {
     console.error('Trading dashboard error:', e);
@@ -1266,7 +1339,46 @@ function getCompanyName(symbol: string): string {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // 8. Select Trading Account Type API
+app.post('/api/trading/select-account-type', async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  const { type } = req.body;
+
+  if (!type) {
+    return res.status(400).json({ error: 'Account type is required' });
+  }
+
+  try {
+    let userId = null;
+    if (token) {
+      const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+      if (user) userId = user.id;
+    }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { data: updatedAccount, error } = await supabaseAdmin
+      .from('accounts')
+      .update({ 
+        account_type: type,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', userId)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({ success: true, account: updatedAccount });
+  } catch (err: any) {
+    console.error('Select account type error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update account type' });
+  }
+});
+
+app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

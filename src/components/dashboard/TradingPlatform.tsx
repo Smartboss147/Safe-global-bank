@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { supabase } from '../../lib/supabase';
 import TradingHeader from '../trading/TradingHeader';
 import TradingDashboard from '../trading/TradingDashboard';
 import StockMarketDashboard from '../trading/StockMarketDashboard';
@@ -78,9 +79,34 @@ export default function TradingPlatform({ user, account }: { user: any; account:
 
         {activeTab === 'accounts' && (
           <AccountTypesView
-            onSelectAccountType={(type) => {
-              setSelectedAccountType(type);
-              setActiveTab('wallet');
+            onSelectAccountType={async (type) => {
+              try {
+                const session = await supabase.auth.getSession();
+                const token = session.data.session?.access_token;
+                
+                const res = await fetch('/api/trading/select-account-type', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                  },
+                  body: JSON.stringify({ type })
+                });
+                
+                if (res.ok) {
+                  setSelectedAccountType(type);
+                  // Optimistically update or re-fetch account would be better here
+                  setActiveTab('wallet');
+                } else {
+                  console.error('Failed to select account type');
+                  setSelectedAccountType(type);
+                  setActiveTab('wallet');
+                }
+              } catch (e) {
+                console.error('Error selecting account type:', e);
+                setSelectedAccountType(type);
+                setActiveTab('wallet');
+              }
             }}
             isDarkMode={isDarkMode}
           />

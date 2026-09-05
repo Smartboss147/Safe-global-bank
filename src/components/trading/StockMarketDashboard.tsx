@@ -246,8 +246,14 @@ export default function StockMarketDashboard({ user, account, isDarkMode = false
             leverage: 1
           })
         });
-        const data = await res.json();
-        if (res.ok && data.success) {
+        
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({ error: 'Server error' }));
+          throw new Error(errData.error || `Execution failed with status ${res.status}`);
+        }
+
+        const data = await res.json().catch(() => ({ success: false }));
+        if (data.success) {
           success = true;
         }
       } catch (apiErr) {
@@ -517,7 +523,7 @@ export default function StockMarketDashboard({ user, account, isDarkMode = false
                   <ComposedChart data={enrichedChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke={isDarkMode ? '#1e293b' : '#e2e8f0'} />
                     <XAxis dataKey="time" stroke={isDarkMode ? '#64748b' : '#94a3b8'} textAnchor="end" fontSize={11} />
-                    <YAxis yAxisPrice domain={['auto', 'auto']} stroke={isDarkMode ? '#64748b' : '#94a3b8'} fontSize={11} />
+                    <YAxis domain={['auto', 'auto']} stroke={isDarkMode ? '#64748b' : '#94a3b8'} fontSize={11} tickFormatter={(val) => `$${val}`} />
                     <Tooltip
                       contentStyle={{
                         backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',

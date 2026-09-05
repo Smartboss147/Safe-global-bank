@@ -52,7 +52,8 @@ export default function TradingDashboard({ user, account, setActiveTab, isDarkMo
       ]);
 
       if (!dashRes.ok) throw new Error('Failed to load trading dashboard data');
-      const dashJson = await dashRes.json();
+      const dashJson = await dashRes.json().catch(() => null);
+      if (!dashJson) throw new Error('Invalid dashboard data received from server');
       setDashboardData(dashJson);
 
       if (advRes.ok) {
