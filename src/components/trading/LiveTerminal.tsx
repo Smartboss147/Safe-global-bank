@@ -620,7 +620,8 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
               <div className="flex flex-col items-center">
                 <span className="text-[10px] text-gray-500">Stop Loss</span>
                 <input 
-                   type="number" 
+                   type="text" 
+                   inputMode="decimal"
                    value={stopLoss} 
                    onChange={(e) => setStopLoss(e.target.value)} 
                    placeholder="Not set"
@@ -630,7 +631,8 @@ export default function LiveTerminal({ user, account, isDarkMode = true }: LiveT
               <div className="flex flex-col items-center">
                 <span className="text-[10px] text-gray-500">Take Profit</span>
                 <input 
-                   type="number" 
+                   type="text" 
+                   inputMode="decimal"
                    value={takeProfit} 
                    onChange={(e) => setTakeProfit(e.target.value)} 
                    placeholder="Not set"
