@@ -88,7 +88,8 @@ app.get('/api/admin/all-data', verifyAdmin, async (req, res) => {
       { data: investmentPlansData },
       { data: marketAssetsData },
       { data: tradingAccountsData },
-      { data: tradingPositionsData }
+      { data: tradingPositionsData },
+      { data: allWalletsData }
     ] = await Promise.all([
       supabaseAdmin.from('supported_countries').select('*').order('country_name'),
       supabaseAdmin.from('profiles').select('*'),
@@ -102,7 +103,8 @@ app.get('/api/admin/all-data', verifyAdmin, async (req, res) => {
       supabaseAdmin.from('investment_plans').select('*'),
       supabaseAdmin.from('market_assets').select('*'),
       supabaseAdmin.from('trading_accounts').select('*').then(res => res, () => ({ data: [] })),
-      supabaseAdmin.from('trading_positions').select('*').then(res => res, () => ({ data: [] }))
+      supabaseAdmin.from('trading_positions').select('*').then(res => res, () => ({ data: [] })),
+      supabaseAdmin.from('wallets').select('*').then(res => res, () => ({ data: [] }))
     ]);
 
     res.json({
@@ -119,7 +121,8 @@ app.get('/api/admin/all-data', verifyAdmin, async (req, res) => {
       investmentPlans: investmentPlansData || [],
       marketAssets: marketAssetsData || [],
       tradingAccounts: tradingAccountsData || [],
-      tradingPositions: tradingPositionsData || []
+      tradingPositions: tradingPositionsData || [],
+      wallets: allWalletsData || []
     });
   } catch (err: any) {
     console.error('[Server Admin API Error] all-data exception:', err);
@@ -908,42 +911,83 @@ app.post('/api/admin/user-action', verifyAdmin, async (req, res) => {
 
       case 'credit_wallet':
       case 'debit_wallet':
-      case 'set_account_balance':
-        const { data: acc } = await supabaseAdmin.from('accounts').select('balance, currency').eq('user_id', targetUserId).maybeSingle();
-        const oldBal = Number(acc?.balance || 0);
-        let newBal = oldBal;
-        
-        if (action === 'credit_wallet') newBal = oldBal + Number(amount);
-        else if (action === 'debit_wallet') newBal = oldBal - Number(amount);
-        else if (action === 'set_account_balance') newBal = Number(amount);
+      case 'set_wallet_balance':
+        const { walletType, reference } = metadata || {};
+        const amountNum = Number(amount);
+        if (isNaN(amountNum) && action !== 'set_wallet_balance') throw new Error('Invalid amount');
+        if (!walletType) throw new Error('Missing wallet type');
 
-        if (isNaN(newBal)) throw new Error('Invalid numeric amount');
-
-        const { data: balRes, error: balErr } = await supabaseAdmin
-          .from('accounts')
-          .update({ balance: newBal, updated_at: new Date().toISOString() })
+        // Verify wallet exists or create it
+        let { data: walletData, error: walletFetchError } = await supabaseAdmin
+          .from('wallets')
+          .select('*')
           .eq('user_id', targetUserId)
+          .eq('wallet_type', walletType)
+          .maybeSingle();
+
+        if (walletFetchError) throw walletFetchError;
+
+        if (!walletData) {
+          // If debiting or setting a non-existent wallet, that's an error unless we want auto-create
+          if (action === 'debit_wallet') throw new Error(`Wallet of type ${walletType} not found for this user.`);
+          
+          const { data: newWallet, error: createError } = await supabaseAdmin
+            .from('wallets')
+            .insert([{ 
+              user_id: targetUserId, 
+              wallet_type: walletType, 
+              balance: 0,
+              currency: 'USD'
+            }])
+            .select()
+            .single();
+          
+          if (createError) throw createError;
+          walletData = newWallet;
+        }
+
+        const oldBalance = Number(walletData.balance || 0);
+        let newBalance = oldBalance;
+        if (action === 'credit_wallet') newBalance = oldBalance + amountNum;
+        else if (action === 'debit_wallet') newBalance = oldBalance - amountNum;
+        else if (action === 'set_wallet_balance') newBalance = amountNum;
+
+        if (newBalance < 0) throw new Error('Insufficient funds in wallet for this debit operation.');
+
+        const { data: updatedWallet, error: walletUpdateError } = await supabaseAdmin
+          .from('wallets')
+          .update({ 
+            balance: newBalance,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', walletData.id)
           .select()
           .single();
-        if (balErr) throw balErr;
 
-        // Sync to profile if column exists
-        await supabaseAdmin.from('profiles').update({ balance: newBal }).eq('id', targetUserId);
+        if (walletUpdateError) throw walletUpdateError;
 
-        // Record Ledger Transaction
-        await supabaseAdmin.from('transactions').insert([{
-          user_id: targetUserId,
-          type: action === 'credit_wallet' ? 'admin_credit' : action === 'debit_wallet' ? 'admin_debit' : 'adjustment',
-          amount: Math.abs(newBal - oldBal),
-          currency: acc?.currency || 'USD',
-          status: 'completed',
-          description: `Admin balance adjustment: ${reason}`,
-          created_at: new Date().toISOString()
-        }]);
+        // Create transaction record
+        const { error: txError } = await supabaseAdmin
+          .from('wallet_transactions')
+          .insert([{
+            wallet_id: walletData.id,
+            user_id: targetUserId,
+            type: action === 'credit_wallet' ? 'credit' : action === 'debit_wallet' ? 'debit' : 'adjustment',
+            amount: action === 'set_wallet_balance' ? Math.abs(newBalance - oldBalance) : amountNum,
+            balance_after: newBalance,
+            description: reason || `Admin manual ${action.split('_')[0]}`,
+            reference: reference || null
+          }]);
 
-        result = balRes;
-        beforeValue = { balance: oldBal };
-        afterValue = { balance: newBal };
+        if (txError) {
+          // Optional: roll back balance if ledger fails
+          await supabaseAdmin.from('wallets').update({ balance: oldBalance }).eq('id', walletData.id);
+          throw txError;
+        }
+
+        result = updatedWallet;
+        beforeValue = { balance: oldBalance, wallet_type: walletType };
+        afterValue = { balance: newBalance, wallet_type: walletType };
         break;
 
       case 'update_profile':

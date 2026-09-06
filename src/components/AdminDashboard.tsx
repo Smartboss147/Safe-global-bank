@@ -23,6 +23,8 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [emailLogs, setEmailLogs] = useState<any[]>([]);
   const [cryptoTxs, setCryptoTxs] = useState<any[]>([]);
   const [kycDocs, setKycDocs] = useState<any[]>([]);
+  const [allWallets, setAllWallets] = useState<any[]>([]);
+  const [walletLedger, setWalletLedger] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -196,6 +198,21 @@ export default function AdminDashboard({ user }: { user: any }) {
     }
   };
 
+  const fetchWalletLedger = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('wallet_transactions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setWalletLedger(data || []);
+    } catch (err: any) {
+      console.error('Error fetching wallet ledger:', err.message);
+    }
+  };
+
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -220,6 +237,7 @@ export default function AdminDashboard({ user }: { user: any }) {
       let plansData: any = null;
       let assetsData: any = null;
       let tpData: any = null;
+      let wData: any = null;
 
       if (res.ok && data.success) {
         countriesData = data.countries;
@@ -234,9 +252,10 @@ export default function AdminDashboard({ user }: { user: any }) {
         plansData = data.investmentPlans;
         assetsData = data.marketAssets;
         tpData = data.tradingPositions;
+        wData = data.wallets;
       } else {
         // Fallback to direct client queries if backend endpoint fails
-        const [cRes, pRes, aRes, cwRes, tRes, adRes, crRes, kRes, plRes, asRes, tpRes] = await Promise.all([
+        const [cRes, pRes, aRes, cwRes, tRes, adRes, crRes, kRes, plRes, asRes, tpRes, wRes] = await Promise.all([
           supabase.from('supported_countries').select('*').order('country_name'),
           supabase.from('profiles').select('*'),
           supabase.from('accounts').select('*'),
@@ -247,7 +266,8 @@ export default function AdminDashboard({ user }: { user: any }) {
           supabase.from('kyc_documents').select('*'),
           supabase.from('investment_plans').select('*'),
           supabase.from('market_assets').select('*'),
-          supabase.from('trading_positions').select('*').then(res => res, () => ({ data: [] }))
+          supabase.from('trading_positions').select('*').then(res => res, () => ({ data: [] })),
+          supabase.from('wallets').select('*').then(res => res, () => ({ data: [] }))
         ]);
         countriesData = cRes.data;
         profilesData = pRes.data;
@@ -260,6 +280,7 @@ export default function AdminDashboard({ user }: { user: any }) {
         plansData = plRes.data;
         assetsData = asRes.data;
         tpData = tpRes.data;
+        wData = wRes.data;
       }
 
       if (countriesData) setSupportedCountries(countriesData);
@@ -268,6 +289,7 @@ export default function AdminDashboard({ user }: { user: any }) {
       if (txData) setTransactions(txData);
       if (auditData) setAuditLogs(auditData);
       if (tpData) setTradingPositions(tpData);
+      if (wData) setAllWallets(wData);
 
       try {
         if (emlData && emlData.length > 0) {
@@ -1131,87 +1153,156 @@ export default function AdminDashboard({ user }: { user: any }) {
         )}
 
         {/* TAB 4: WALLET MANAGEMENT */}
-        {activeTab === 'wallets' && (
-          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-              <div>
-                <h3 className="text-lg font-bold text-white">Wallet & Ledger Controls</h3>
-                <p className="text-xs text-gray-400">Credit, debit or override user balances with audit tracking.</p>
+        {activeTab === 'wallets' && (() => {
+          const walletsByUser = new Map();
+          for (const wallet of allWallets || []) {
+            const existing = walletsByUser.get(wallet.user_id) ?? [];
+            existing.push(wallet);
+            walletsByUser.set(wallet.user_id, existing);
+          }
+          const walletControlRows = (users || []).map((profile) => ({
+            ...profile,
+            wallets: walletsByUser.get(profile.id) ?? [],
+          }));
+
+          console.log('Wallet control profiles:', users);
+          console.log('Wallet control wallets:', allWallets);
+          console.log('Wallet control user count:', users?.length ?? 0);
+          console.log('Wallet control wallet count:', allWallets?.length ?? 0);
+          console.log('Combined wallet rows:', walletControlRows);
+
+          const getWallet = (row: any, walletType: string) => {
+            return row.wallets.find((wallet: any) => wallet.wallet_type === walletType);
+          };
+
+          return (
+            <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-white">Wallet & Ledger Controls</h3>
+                  <p className="text-xs text-gray-400">Credit, debit or override user balances with audit tracking.</p>
+                  <div className="mt-1 inline-flex items-center gap-2 px-2 py-0.5 bg-indigo-500/10 border border-indigo-500/20 rounded text-[10px] font-mono text-indigo-400">
+                    <Users size={10} /> {walletControlRows.length} Users Loaded
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={() => fetchData(false)}
+                    className="p-2.5 bg-white/5 hover:bg-white/10 text-gray-400 rounded-xl transition"
+                    title="Refresh Data"
+                  >
+                    <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (users.length === 0) return;
+                      setSelectedUser(users[0]);
+                      setWalletActionType('credit');
+                      setWalletAmount('');
+                      setWalletReason('');
+                      setIsWalletModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md transition"
+                  >
+                    <PlusCircle size={16} /> Global Adjustment
+                  </button>
+                </div>
               </div>
 
-              <button 
-                onClick={() => {
-                  if (users.length === 0) return;
-                  setSelectedUser(users[0]);
-                  setWalletActionType('credit');
-                  setWalletAmount('');
-                  setWalletReason('');
-                  setIsWalletModalOpen(true);
-                }}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-md transition"
-              >
-                <PlusCircle size={16} /> Adjust Wallet Balance
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-[#181a22] text-[10px] font-mono uppercase text-gray-400">
-                  <tr>
-                    <th className="p-3.5 border-b border-white/10">Account Number</th>
-                    <th className="p-3.5 border-b border-white/10">Account Holder</th>
-                    <th className="p-3.5 border-b border-white/10">Type</th>
-                    <th className="p-3.5 border-b border-white/10">Balance</th>
-                    <th className="p-3.5 border-b border-white/10 text-right">Quick Ledger Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs font-medium divide-y divide-white/5">
-                  {accounts.map((acc: any) => {
-                    const u = users.find(userItem => userItem.id === acc.user_id || userItem.id === acc.userId);
-                    return (
-                      <tr key={acc.id} className="hover:bg-white/5">
-                        <td className="p-3.5 font-mono font-bold text-white">{acc.account_number || acc.accountNumber || 'ACC-10023'}</td>
-                        <td className="p-3.5 text-gray-300">{u?.email || acc.user_id}</td>
-                        <td className="p-3.5">
-                          <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 rounded-full text-[10px] font-bold border border-indigo-500/20">
-                            {acc.type || acc.accountType || 'Checking'}
-                          </span>
-                        </td>
-                        <td className="p-3.5 font-black text-emerald-400">{formatCurrencyAmount(Number(acc.balance || 0), getCurrencyInfo(acc?.currency_code || acc?.currency || u?.currency_code || u?.country || 'USD'))}</td>
-                        <td className="p-3.5 text-right space-x-2">
-                          <button 
-                            onClick={() => {
-                              setSelectedUser({ ...u, account: acc });
-                              setWalletActionType('credit');
-                              setWalletAmount('');
-                              setWalletReason('');
-                              setIsWalletModalOpen(true);
-                            }}
-                            className="px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 text-[11px] font-bold transition"
-                          >
-                            + Credit
-                          </button>
-                          <button 
-                            onClick={() => {
-                              setSelectedUser({ ...u, account: acc });
-                              setWalletActionType('debit');
-                              setWalletAmount('');
-                              setWalletReason('');
-                              setIsWalletModalOpen(true);
-                            }}
-                            className="px-3 py-1 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-lg hover:bg-rose-500/20 text-[11px] font-bold transition"
-                          >
-                            - Debit
-                          </button>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-[#181a22] text-[10px] font-mono uppercase text-gray-400">
+                    <tr>
+                      <th className="p-3.5 border-b border-white/10">User Info</th>
+                      <th className="p-3.5 border-b border-white/10">Main</th>
+                      <th className="p-3.5 border-b border-white/10">Trading</th>
+                      <th className="p-3.5 border-b border-white/10">Investment</th>
+                      <th className="p-3.5 border-b border-white/10">Bonus</th>
+                      <th className="p-3.5 border-b border-white/10">Profit</th>
+                      <th className="p-3.5 border-b border-white/10 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs font-medium divide-y divide-white/5">
+                    {loading && walletControlRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-10 text-center">
+                          <div className="flex flex-col items-center gap-3">
+                            <RefreshCw className="animate-spin text-indigo-500" size={24} />
+                            <span className="text-gray-500 font-medium">Loading wallet users...</span>
+                          </div>
                         </td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    ) : walletControlRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-10 text-center text-gray-500 italic">No users found in the system.</td>
+                      </tr>
+                    ) : (
+                      walletControlRows.map((row: any) => {
+                        const mainWallet = getWallet(row, 'main');
+                        const tradingWallet = getWallet(row, 'trading');
+                        const investmentWallet = getWallet(row, 'investment');
+                        const bonusWallet = getWallet(row, 'bonus');
+                        const profitWallet = getWallet(row, 'profit');
+
+                        const currency = row.account_currency || 'USD';
+                        const currencyInfo = getCurrencyInfo(currency);
+
+                        return (
+                          <tr key={row.id} className="hover:bg-white/5">
+                            <td className="p-3.5">
+                              <div className="flex flex-col">
+                                <span className="text-white font-bold">{row.display_name || `${row.first_name || ''} ${row.last_name || ''}`}</span>
+                                <span className="text-[10px] text-gray-500 font-mono">{row.email}</span>
+                                <span className="text-[9px] text-gray-600 font-mono mt-0.5">{row.id.substring(0, 8)}...</span>
+                              </div>
+                            </td>
+                            <td className="p-3.5">
+                              <div className="flex flex-col">
+                                <span className={`font-black ${mainWallet ? 'text-emerald-400' : 'text-gray-600'}`}>
+                                  {formatCurrencyAmount(Number(mainWallet?.balance || 0), currencyInfo)}
+                                </span>
+                                <span className="text-[9px] text-gray-600 uppercase font-black">{mainWallet ? 'Active' : 'Missing'}</span>
+                              </div>
+                            </td>
+                            <td className="p-3.5 text-gray-400 font-mono">
+                              {tradingWallet ? formatCurrencyAmount(Number(tradingWallet.balance), currencyInfo) : '$0.00'}
+                            </td>
+                            <td className="p-3.5 text-gray-400 font-mono">
+                              {investmentWallet ? formatCurrencyAmount(Number(investmentWallet.balance), currencyInfo) : '$0.00'}
+                            </td>
+                            <td className="p-3.5 text-gray-400 font-mono">
+                              {bonusWallet ? formatCurrencyAmount(Number(bonusWallet.balance), currencyInfo) : '$0.00'}
+                            </td>
+                            <td className="p-3.5 text-gray-400 font-mono">
+                              {profitWallet ? formatCurrencyAmount(Number(profitWallet.balance), currencyInfo) : '$0.00'}
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <button 
+                                onClick={() => {
+                                  setSelectedUser(row);
+                                  setWalletActionType('credit');
+                                  setWalletAmount('');
+                                  setWalletReason('');
+                                  setWalletBalanceType('main');
+                                  setIsWalletModalOpen(true);
+                                  fetchWalletLedger(row.id);
+                                }}
+                                className="px-3 py-1.5 bg-indigo-600/10 hover:bg-indigo-600 text-indigo-400 hover:text-white border border-indigo-500/20 rounded-lg text-[10px] font-bold transition whitespace-nowrap"
+                              >
+                                Manage Wallet
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* TAB 5: DEPOSITS */}
         {activeTab === 'deposits' && (
@@ -2243,151 +2334,237 @@ export default function AdminDashboard({ user }: { user: any }) {
       )}
 
       {/* WALLET ADJUSTMENT MODAL */}
-      {isWalletModalOpen && selectedUser && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-[#121319] border border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 text-gray-200">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
-                  <DollarSign size={20} />
+      {isWalletModalOpen && selectedUser && (() => {
+        const userWallets = allWallets.filter(w => w.user_id === selectedUser.id);
+        const currentWallet = userWallets.find(w => w.wallet_type === walletBalanceType);
+        const currentBalance = Number(currentWallet?.balance || 0);
+        
+        const amountNum = Number(walletAmount);
+        const newEstimatedBalance = walletActionType === 'credit' 
+          ? currentBalance + amountNum 
+          : walletActionType === 'debit' 
+            ? currentBalance - amountNum 
+            : amountNum;
+
+        const currency = selectedUser.account_currency || 'USD';
+        const currencyInfo = getCurrencyInfo(currency);
+
+        return (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-[#121319] border border-white/10 rounded-3xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl text-gray-200">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-white/10 p-6 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                    <DollarSign size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Manage Wallet Ledger</h3>
+                    <p className="text-xs text-gray-400">Financial oversight for {selectedUser.display_name || selectedUser.email}</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Update Account Balance</h3>
-                  <p className="text-xs text-gray-400">Manual balance override for {selectedUser.displayName || selectedUser.email}</p>
+                <button onClick={() => setIsWalletModalOpen(false)} className="p-2 hover:bg-white/5 rounded-full transition text-gray-400 hover:text-white">
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Left: Controls */}
+                <div className="space-y-6">
+                  <div className="p-4 bg-[#181a22] rounded-2xl border border-white/5 space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-[10px] font-mono text-gray-500 uppercase font-bold">Target User</p>
+                        <p className="text-sm font-bold text-white">{selectedUser.display_name || 'User'}</p>
+                        <p className="text-[10px] text-gray-500 font-mono">{selectedUser.email}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-mono text-gray-500 uppercase font-bold">Currency</p>
+                        <p className="text-sm font-bold text-indigo-400 uppercase">{currency}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Select Wallet</label>
+                        <select 
+                          value={walletBalanceType} 
+                          onChange={(e) => setWalletBalanceType(e.target.value as any)}
+                          className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 text-sm"
+                        >
+                          <option value="main">Main Wallet</option>
+                          <option value="trading">Trading Wallet</option>
+                          <option value="investment">Investment Wallet</option>
+                          <option value="bonus">Bonus Wallet</option>
+                          <option value="profit">Profit Wallet</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Action</label>
+                        <select 
+                          value={walletActionType} 
+                          onChange={(e) => setWalletActionType(e.target.value as any)}
+                          className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 text-sm"
+                        >
+                          <option value="credit">Credit Balance (+)</option>
+                          <option value="debit">Debit Balance (-)</option>
+                          <option value="set_wallet_balance">Set Exact Balance (=)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl flex justify-between items-center">
+                      <div>
+                        <p className="text-[10px] font-mono text-indigo-300/50 uppercase font-bold">Current {walletBalanceType} Balance</p>
+                        <p className="text-xl font-black text-white">{formatCurrencyAmount(currentBalance, currencyInfo)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-mono text-indigo-300/50 uppercase font-bold">Expected New Balance</p>
+                        <p className={`text-xl font-black ${newEstimatedBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {formatCurrencyAmount(newEstimatedBalance, currencyInfo)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Adjustment Amount</label>
+                        <div className="relative">
+                          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</div>
+                          <input 
+                            type="number"
+                            value={walletAmount}
+                            onChange={(e) => setWalletAmount(e.target.value)}
+                            placeholder="0.00"
+                            className="w-full pl-8 pr-4 py-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 text-sm"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Reason for Adjustment</label>
+                        <input 
+                          type="text"
+                          value={walletReason}
+                          onChange={(e) => setWalletReason(e.target.value)}
+                          placeholder="e.g. Manual deposit correction, bonus grant..."
+                          className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-4 flex gap-3">
+                      <button 
+                        disabled={loading || !walletAmount || !walletReason || (walletActionType === 'debit' && currentBalance < amountNum)}
+                        onClick={async () => {
+                          setLoading(true);
+                          try {
+                            const session = (await supabase.auth.getSession()).data.session;
+                            const token = session?.access_token;
+                            
+                            const res = await fetch('/api/admin/user-action', {
+                              method: 'POST',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                              },
+                              body: JSON.stringify({
+                                action: walletActionType === 'credit' ? 'credit_wallet' : walletActionType === 'debit' ? 'debit_wallet' : 'set_wallet_balance',
+                                targetUserId: selectedUser.id,
+                                amount: walletAmount,
+                                reason: walletReason,
+                                metadata: {
+                                  walletType: walletBalanceType
+                                }
+                              })
+                            });
+                            
+                            const data = await res.json();
+                            if (res.ok && data.success) {
+                              setMsg({ type: 'success', text: `Wallet successfully updated. New balance: ${formatCurrencyAmount(newEstimatedBalance, currencyInfo)}` });
+                              fetchData(true);
+                              fetchWalletLedger(selectedUser.id);
+                              setWalletAmount('');
+                              setWalletReason('');
+                            } else {
+                              throw new Error(data.error || 'Failed to update wallet');
+                            }
+                          } catch (err: any) {
+                            setMsg({ type: 'error', text: err.message });
+                          } finally {
+                            setLoading(false);
+                          }
+                        }}
+                        className="flex-1 py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-black text-xs uppercase tracking-wider transition disabled:opacity-50"
+                      >
+                        {loading ? 'Processing...' : `Confirm ${walletActionType}`}
+                      </button>
+                      <button 
+                        onClick={() => setIsWalletModalOpen(false)}
+                        className="px-6 py-3.5 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-xl font-bold text-xs uppercase tracking-wider transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right: Ledger History */}
+                <div className="flex flex-col h-full min-h-[400px]">
+                  <div className="flex items-center gap-2 mb-4 shrink-0">
+                    <History className="text-indigo-400" size={16} />
+                    <h4 className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">Wallet Transaction Ledger</h4>
+                  </div>
+                  
+                  <div className="flex-1 bg-[#181a22] border border-white/5 rounded-2xl overflow-hidden flex flex-col">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-white/5 text-[9px] font-mono uppercase text-gray-500">
+                          <tr>
+                            <th className="p-3">Date</th>
+                            <th className="p-3">Type</th>
+                            <th className="p-3">Amount</th>
+                            <th className="p-3">Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-[10px] divide-y divide-white/5">
+                          {walletLedger.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="p-12 text-center text-gray-600 italic">No wallet transactions found for this user.</td>
+                            </tr>
+                          ) : (
+                            walletLedger.map((tx: any) => (
+                              <tr key={tx.id} className="hover:bg-white/5">
+                                <td className="p-3 text-gray-500 whitespace-nowrap">
+                                  {new Date(tx.created_at).toLocaleDateString()}
+                                </td>
+                                <td className="p-3 uppercase font-bold">
+                                  <span className={tx.type === 'credit' ? 'text-emerald-400' : tx.type === 'debit' ? 'text-rose-400' : 'text-indigo-400'}>
+                                    {tx.type}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-mono font-bold text-white">
+                                  {tx.type === 'debit' ? '-' : '+'}{formatCurrencyAmount(tx.amount, currencyInfo)}
+                                </td>
+                                <td className="p-3 font-mono text-gray-400">
+                                  {formatCurrencyAmount(tx.balance_after, currencyInfo)}
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <button onClick={() => setIsWalletModalOpen(false)} className="text-gray-400 hover:text-white font-bold text-lg px-2">✕</button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div className="p-3.5 bg-[#181a22] rounded-xl border border-white/5 space-y-1.5">
-                <p className="text-gray-400">User: <span className="font-bold text-white">{selectedUser.displayName || selectedUser.email}</span></p>
-                <p className="text-gray-400">Email: <span className="font-bold text-indigo-300">{selectedUser.email}</span></p>
-                <p className="text-gray-400">Account #: <span className="font-mono text-white">{selectedUser.account?.account_number || selectedUser.account?.accountNumber || 'ACC-100234'}</span></p>
-                <p className="text-gray-400">
-                  Current Balance: <span className="font-bold text-emerald-400">
-                    {walletBalanceType === 'main' ? formatCurrencyAmount(Number(selectedUser.account?.balance || 0), getCurrencyInfo(selectedUser.account?.currency_code || selectedUser.account?.currency || selectedUser.currency_code || selectedUser.country || 'USD')) : 
-                     walletBalanceType === 'trading' ? `$${Number(cryptoWallets.find(w => w.user_id === selectedUser.id)?.trading_balance || 0).toFixed(2)}` :
-                     `${Number(cryptoWallets.find(w => w.user_id === selectedUser.id)?.balances?.[walletCryptoAsset] || 0)} ${walletCryptoAsset}`}
-                  </span>
-                </p>
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-400 uppercase mb-1">Balance Type</label>
-                <select 
-                  value={walletBalanceType} 
-                  onChange={(e) => setWalletBalanceType(e.target.value as 'main' | 'crypto' | 'trading')}
-                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 mb-4"
-                >
-                  <option value="main">Main Balance</option>
-                  <option value="crypto">Crypto Balance</option>
-                  <option value="trading">Trading Balance</option>
-                </select>
-              </div>
-
-              {walletBalanceType === 'crypto' && (
-                <div>
-                  <label className="block font-bold text-gray-400 uppercase mb-1">Crypto Asset</label>
-                  <select 
-                    value={walletCryptoAsset} 
-                    onChange={(e) => setWalletCryptoAsset(e.target.value)}
-                    className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500 mb-4"
-                  >
-                    <option value="USDT">USDT</option>
-                    <option value="BTC">BTC</option>
-                    <option value="ETH">ETH</option>
-                    <option value="SOL">SOL</option>
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="block font-bold text-gray-400 uppercase mb-1">Adjustment Type</label>
-                <select 
-                  value={walletActionType} 
-                  onChange={(e) => setWalletActionType(e.target.value as any)}
-                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="adjust">Set Exact Balance (=)</option>
-                  <option value="credit">Credit Wallet (+)</option>
-                  <option value="debit">Debit Wallet (-)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-400 uppercase mb-1">Amount</label>
-                <input 
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  placeholder="0.00"
-                  value={walletAmount}
-                  onChange={(e) => setWalletAmount(e.target.value)}
-                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl font-bold text-white text-sm focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-bold text-gray-400 uppercase mb-1">Audit Reason (Required)</label>
-                <input 
-                  type="text"
-                  placeholder="Reason for balance override..."
-                  value={walletReason}
-                  onChange={(e) => setWalletReason(e.target.value)}
-                  className="w-full p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-medium focus:outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <button
-                onClick={() => {
-                  const amt = parseFloat(walletAmount);
-                  if (walletAmount === '' || isNaN(amt) || amt < 0) {
-                    alert('Please enter a valid, non-negative amount');
-                    return;
-                  }
-                  if (!walletReason.trim()) {
-                    alert('Please provide a reason for the audit log');
-                    return;
-                  }
-
-                  let currentBal = 0;
-                  if (walletBalanceType === 'main') {
-                    currentBal = Number(selectedUser.account?.balance || 0);
-                  } else if (walletBalanceType === 'trading') {
-                    const wallet = cryptoWallets.find(w => w.user_id === selectedUser.id);
-                    currentBal = Number(wallet?.trading_balance || 0);
-                  } else if (walletBalanceType === 'crypto') {
-                    const wallet = cryptoWallets.find(w => w.user_id === selectedUser.id);
-                    currentBal = Number(wallet?.balances?.[walletCryptoAsset] || 0);
-                  }
-
-                  let newBal = currentBal;
-                  if (walletActionType === 'credit') newBal = currentBal + amt;
-                  else if (walletActionType === 'debit') {
-                    newBal = currentBal - amt;
-                    if (newBal < 0) {
-                      if (!confirm(`Warning: Debiting this amount will set the balance below zero (to ${newBal}). Do you wish to proceed?`)) {
-                        return;
-                      }
-                    }
-                  }
-                  else if (walletActionType === 'adjust') newBal = amt;
-
-                  if (walletBalanceType === 'main') {
-                    handleUpdateBalance(selectedUser.account?.id || `acc_${selectedUser.id}`, newBal, walletReason.trim());
-                  } else {
-                    handleCryptoUpdateBalance(selectedUser.id, walletBalanceType, walletCryptoAsset, newBal, walletReason.trim());
-                  }
-                }}
-                className="w-full py-3.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-emerald-900/20 transition active:scale-[0.99]"
-              >
-                Confirm & Write Ledger Entry
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
     </div>
   );
