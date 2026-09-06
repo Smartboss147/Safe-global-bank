@@ -24,6 +24,7 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [cryptoTxs, setCryptoTxs] = useState<any[]>([]);
   const [kycDocs, setKycDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [searchQuery, setSearchQuery] = useState('');
@@ -109,6 +110,90 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [supportedCountries, setSupportedCountries] = useState<any[]>([]);
 
   const navigate = useNavigate();
+
+  const loadAdminUsers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // VERIFY THE CURRENT AUTHENTICATED USER
+      const {
+        data: { user: authUser },
+        error: authError,
+      } = await supabase.auth.getUser();
+      
+      console.log('Current auth user:', authUser);
+      
+      if (authError) throw authError;
+      if (!authUser) {
+        throw new Error('You are not signed in');
+      }
+
+      // VERIFY ADMIN MEMBERSHIP BY UUID
+      const { data: adminRecord, error: adminError } = await supabase
+        .from('admins')
+        .select('user_id')
+        .eq('user_id', authUser.id)
+        .maybeSingle();
+      
+      console.log('Admin record:', adminRecord);
+      
+      if (adminError) throw adminError;
+      if (!adminRecord) {
+        throw new Error('This account is not an administrator');
+      }
+
+      // LOAD USERS ONLY AFTER ADMIN VERIFICATION
+      const { data: profileRows, error: profilesError } = await supabase
+        .from('profiles')
+        .select(`
+          id,
+          email,
+          first_name,
+          last_name,
+          display_name,
+          phone,
+          city,
+          state,
+          country,
+          kyc_status,
+          role,
+          account_currency,
+          account_status,
+          created_at,
+          updated_at
+        `)
+        .order('created_at', { ascending: false });
+
+      if (profilesError) {
+        console.error('Profile query error:', {
+          message: profilesError.message,
+          details: profilesError.details,
+          hint: profilesError.hint,
+          code: profilesError.code,
+        });
+        throw profilesError;
+      }
+
+      console.log('Admin profile query result:', {
+        count: profileRows?.length ?? 0,
+        rows: profileRows,
+      });
+
+      setUsers(profileRows ?? []);
+    } catch (err: any) {
+      console.error('Admin users loading failed:', err);
+      const message =
+        err?.message ||
+        err?.details ||
+        err?.hint ||
+        'Unable to load users';
+      setError(message);
+      setUsers([]);
+    } finally {
+      setLoading(false);
+      setHasLoaded(true);
+    }
+  };
 
   const fetchData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -211,63 +296,8 @@ export default function AdminDashboard({ user }: { user: any }) {
         maxLeverage: '1:500'
       })));
 
-      // Robust User Aggregation Engine (Supabase strictly)
-      const userMap = new Map<string, any>();
-
-      // Populate strictly from Supabase profiles
-      if (profilesData && Array.isArray(profilesData)) {
-        profilesData.forEach(p => {
-          if (p && p.id) {
-            userMap.set(p.id, {
-              id: p.id,
-              email: p.email || 'user@safeglobalbank.com',
-              displayName: p.display_name || p.displayName || `${p.first_name || p.firstName || ''} ${p.last_name || p.lastName || ''}`.trim() || p.email?.split('@')[0] || 'Safe Global Bank User',
-              firstName: p.first_name || p.firstName || '',
-              lastName: p.last_name || p.lastName || '',
-              phone: p.phone || '',
-              kyc_status: p.kyc_status || 'Unverified',
-              status: p.status || 'active',
-              role: p.role || 'user',
-              created_at: p.created_at || new Date().toISOString()
-            });
-          }
-        });
-      }
-
-      // Also ensure users present in accounts are in userMap
-      if (accountsData && Array.isArray(accountsData)) {
-        accountsData.forEach((acc: any) => {
-          if (acc.user_id && !userMap.has(acc.user_id)) {
-            userMap.set(acc.user_id, {
-              id: acc.user_id,
-              email: `user_${acc.user_id.substring(0, 6)}@safeglobalbank.com`,
-              displayName: `User ${acc.user_id.substring(0, 6)}`,
-              kyc_status: 'verified',
-              status: 'active',
-              role: 'user',
-              created_at: new Date().toISOString()
-            });
-          }
-        });
-      }
-
-      // Ensure the currently authenticated admin is present if missing
-      if (user && user.id && !userMap.has(user.id)) {
-        userMap.set(user.id, {
-          id: user.id,
-          email: user.email || 'admin@safeglobalbank.com',
-          displayName: user.displayName || user.user_metadata?.full_name || user.email?.split('@')[0] || 'Administrator',
-          firstName: user.first_name || '',
-          lastName: user.last_name || '',
-          phone: user.phone || '',
-          kyc_status: 'verified',
-          status: 'active',
-          role: user.role || 'admin',
-          created_at: user.created_at || new Date().toISOString()
-        });
-      }
-
-      setUsers(Array.from(userMap.values()));
+      // User population is now handled exclusively by loadAdminUsers()
+      // to ensure strictly verified and filtered data as per mandates.
     } catch (error) {
       console.log("Error fetching admin data:", error);
     } finally {
@@ -277,7 +307,8 @@ export default function AdminDashboard({ user }: { user: any }) {
   };
 
   useEffect(() => {
-    fetchData(); // Initial full load
+    loadAdminUsers(); // Initial load using the new logic
+    fetchData(true); // Load other data in background
 
     console.log('[AdminDashboard] Initializing Supabase Realtime synchronization channels...');
 
@@ -732,12 +763,8 @@ export default function AdminDashboard({ user }: { user: any }) {
   const pendingTransactions = transactions.filter(t => t.status === 'pending' || t.status === 'Pending').length;
   const successfulTransactions = transactions.filter(t => t.status === 'completed' || t.status === 'Completed' || t.status === 'success').length;
 
-  const filteredUsers = users.filter(u => 
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.lastName?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // TEMPORARILY DISABLE FILTERS
+  const filteredUsers = users;
 
   // Sidebar Menu Items matching full Role-Based Admin specification
   const sidebarNavItems = [
@@ -948,7 +975,10 @@ export default function AdminDashboard({ user }: { user: any }) {
             </select>
 
             <button 
-              onClick={() => fetchData(true)}
+              onClick={() => {
+                loadAdminUsers();
+                fetchData(true);
+              }}
               className="flex items-center gap-2 bg-[#181a22] hover:bg-white/10 border border-white/10 text-gray-200 px-3.5 py-2 rounded-xl text-xs font-bold transition"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -1107,119 +1137,126 @@ export default function AdminDashboard({ user }: { user: any }) {
               </div>
             </div>
 
-            {/* Users Data Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-[#181a22] text-[10px] font-mono uppercase text-gray-400">
-                  <tr>
-                    <th className="p-3.5 border-b border-white/10">User Info</th>
-                    <th className="p-3.5 border-b border-white/10">Account #</th>
-                    <th className="p-3.5 border-b border-white/10">Balance ($)</th>
-                    <th className="p-3.5 border-b border-white/10">KYC Verification</th>
-                    <th className="p-3.5 border-b border-white/10">Status</th>
-                    <th className="p-3.5 border-b border-white/10 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="text-xs font-medium divide-y divide-white/5">
-                  {filteredUsers.length > 0 ? (
-                    filteredUsers.map((u: any) => {
-                      const acc = accounts.find(a => a.user_id === u.id || a.userId === u.id);
-                      return (
-                        <tr key={u.id} className="hover:bg-white/5 transition">
-                          <td className="p-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className="w-9 h-9 rounded-full bg-indigo-600/30 text-indigo-300 font-bold flex items-center justify-center border border-indigo-500/30">
-                                {(u.displayName || u.email || 'U')[0].toUpperCase()}
+            {loading && <div className="p-8 text-center text-indigo-400 font-bold animate-pulse">Loading users...</div>}
+
+            {error && (
+              <div className="p-6 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-rose-400">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle size={20} />
+                  <strong className="text-lg">Unable to load users</strong>
+                </div>
+                <pre className="text-xs font-mono whitespace-pre-wrap bg-black/30 p-4 rounded-xl border border-rose-500/10 mt-2">
+                  {error}
+                </pre>
+                <button 
+                  onClick={() => loadAdminUsers()}
+                  className="mt-4 px-4 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 rounded-xl text-sm font-bold transition flex items-center gap-2"
+                >
+                  <RefreshCw size={16} />
+                  Retry Loading
+                </button>
+              </div>
+            )}
+
+            {!loading && !error && users.length === 0 && (
+              <div className="p-12 text-center bg-white/5 rounded-2xl border border-dashed border-white/10">
+                <Users size={48} className="mx-auto text-gray-600 mb-4" />
+                <p className="text-gray-400 font-medium text-lg">No users found.</p>
+                <p className="text-gray-500 text-sm">The query succeeded but returned zero rows.</p>
+              </div>
+            )}
+
+            {!loading && !error && users.length > 0 && (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-bold text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+                    {users.length} users found
+                  </p>
+                </div>
+                {/* Users Data Table */}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead className="bg-[#181a22] text-[10px] font-mono uppercase text-gray-400">
+                      <tr>
+                        <th className="p-3.5 border-b border-white/10">User Info</th>
+                        <th className="p-3.5 border-b border-white/10">Role</th>
+                        <th className="p-3.5 border-b border-white/10">KYC Status</th>
+                        <th className="p-3.5 border-b border-white/10">Account Status</th>
+                        <th className="p-3.5 border-b border-white/10">Joined</th>
+                        <th className="p-3.5 border-b border-white/10 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-medium divide-y divide-white/5">
+                      {users.map((profile) => {
+                        return (
+                          <tr key={profile.id} className="hover:bg-white/5 transition">
+                            <td className="p-3.5">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-indigo-600/30 text-indigo-300 font-bold flex items-center justify-center border border-indigo-500/30">
+                                  {(profile.display_name || profile.email || 'U')[0].toUpperCase()}
+                                </div>
+                                <div>
+                                  <p className="font-bold text-white">
+                                    {profile.display_name ||
+                                      [profile.first_name, profile.last_name]
+                                        .filter(Boolean)
+                                        .join(' ') ||
+                                      'Unnamed user'}
+                                  </p>
+                                  <p className="text-[11px] text-gray-400">{profile.email || 'No email'}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="font-bold text-white">{u.displayName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'User Account'}</p>
-                                <p className="text-[11px] text-gray-400">{u.email}</p>
+                            </td>
+                            <td className="p-3.5">
+                              <span className="px-2.5 py-1 bg-indigo-500/10 text-indigo-400 rounded-full text-[10px] font-bold border border-indigo-500/20">
+                                {profile.role || 'user'}
+                              </span>
+                            </td>
+                            <td className="p-3.5">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                profile.kyc_status === 'approved' || profile.kyc_status === 'verified' || profile.kyc_status === 'Verified' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              }`}>
+                                {profile.kyc_status || 'Unverified'}
+                              </span>
+                            </td>
+                            <td className="p-3.5">
+                              <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                profile.account_status === 'suspended' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              }`}>
+                                {profile.account_status || 'active'}
+                              </span>
+                            </td>
+                            <td className="p-3.5 text-gray-400 font-mono">
+                              {profile.created_at
+                                ? new Date(profile.created_at).toLocaleDateString()
+                                : '—'}
+                            </td>
+                            <td className="p-3.5 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button 
+                                  onClick={() => { setSelectedUser({ ...profile }); setIsEditModalOpen(true); }}
+                                  title="Edit Role / Privileges"
+                                  className="p-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition"
+                                >
+                                  <Edit3 size={15} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteUserRecord(profile)}
+                                  title="Delete User"
+                                  className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg transition"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
                               </div>
-                            </div>
-                          </td>
-                          <td className="p-3.5 font-mono text-gray-300">
-                            {acc?.account_number || acc?.accountNumber || 'ACC-109284'}
-                          </td>
-                          <td className="p-3.5 font-black text-emerald-400">
-                            {formatCurrencyAmount(Number(acc?.balance || 0), getCurrencyInfo(acc?.currency_code || acc?.currency || u.currency_code || u.country || 'USD'))}
-                          </td>
-                          <td className="p-3.5">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                              u.kyc_status === 'approved' || u.kyc_status === 'verified' || u.kyc_status === 'Verified' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                            }`}>
-                              {u.kyc_status || 'pending'}
-                            </span>
-                          </td>
-                          <td className="p-3.5">
-                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                              u.status === 'suspended' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            }`}>
-                              {u.status === 'suspended' ? 'Suspended' : 'Active'}
-                            </span>
-                          </td>
-                          <td className="p-3.5 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button 
-                                onClick={() => {
-                                  const userAcc = acc || {
-                                    id: `acc_${u.id}`,
-                                    user_id: u.id,
-                                    account_number: 'ACC-' + u.id.substring(0, 6).toUpperCase(),
-                                    balance: 0,
-                                    currency: getCurrencyByCountry(u.country).code
-                                  };
-                                  setSelectedUser({ ...u, account: userAcc });
-                                  setWalletActionType('adjust');
-                                  setWalletAmount(String(userAcc.balance || 0));
-                                  setWalletReason('Manual balance update via Admin Dashboard');
-                                  setIsWalletModalOpen(true);
-                                }}
-                                title="Edit Account Balance"
-                                className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-lg transition flex items-center gap-1 text-xs font-bold"
-                              >
-                                <DollarSign size={14} />
-                                <span>Edit Balance</span>
-                              </button>
-
-                              <button 
-                                onClick={() => { setSelectedUser({ ...u, account: acc }); setIsEditModalOpen(true); }}
-                                title="Edit Role / Privileges"
-                                className="p-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition"
-                              >
-                                <Edit3 size={15} />
-                              </button>
-
-                              <button 
-                                onClick={() => {
-                                  const newStatus = u.status === 'suspended' ? 'active' : 'suspended';
-                                  handleUserStatusUpdate(u.id, 'status', newStatus, newStatus === 'active' ? 'USER_REACTIVATED' : 'USER_SUSPENDED');
-                                }}
-                                title={u.status === 'suspended' ? 'Reactivate User' : 'Suspend User'}
-                                className={`p-2 rounded-lg transition ${u.status === 'suspended' ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20' : 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'}`}
-                              >
-                                <UserX size={15} />
-                              </button>
-
-                              <button 
-                                onClick={() => handleDeleteUserRecord(u)}
-                                title="Delete User"
-                                className="p-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg transition"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan={6} className="p-8 text-center text-gray-500 font-medium">No users found matching search query.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
         )}
 
