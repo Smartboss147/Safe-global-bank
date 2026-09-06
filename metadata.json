@@ -1,6 +1,6 @@
 {
-  "name": "Safe Global Trade",
-  "description": "Safe Global Trade - Institutional Brokerage & Web Trader Banking Platform",
+  "name": "Safe Global Admin Dashboard",
+  "description": "Comprehensive administrative control center for Safe Global Online Bank, managing users, KYC, crypto transfers, trading oversight, and system broadcasts.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

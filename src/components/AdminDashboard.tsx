@@ -81,6 +81,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     { id: 'xauusd', symbol: 'XAU/USD', category: 'Commodities', spread: '1.2 pips', maxLeverage: '1:200', status: 'Open' },
     { id: 'aapl', symbol: 'AAPL', category: 'Stocks', spread: '0.15 pts', maxLeverage: '1:20', status: 'Closed' }
   ]);
+  const [tradingPositions, setTradingPositions] = useState<any[]>([]);
 
   // Investment Plans State
   const [investmentPlans, setInvestmentPlans] = useState([
@@ -218,6 +219,7 @@ export default function AdminDashboard({ user }: { user: any }) {
       let kycData: any = null;
       let plansData: any = null;
       let assetsData: any = null;
+      let tpData: any = null;
 
       if (res.ok && data.success) {
         countriesData = data.countries;
@@ -231,9 +233,10 @@ export default function AdminDashboard({ user }: { user: any }) {
         kycData = data.kycDocs;
         plansData = data.investmentPlans;
         assetsData = data.marketAssets;
+        tpData = data.tradingPositions;
       } else {
         // Fallback to direct client queries if backend endpoint fails
-        const [cRes, pRes, aRes, cwRes, tRes, adRes, crRes, kRes, plRes, asRes] = await Promise.all([
+        const [cRes, pRes, aRes, cwRes, tRes, adRes, crRes, kRes, plRes, asRes, tpRes] = await Promise.all([
           supabase.from('supported_countries').select('*').order('country_name'),
           supabase.from('profiles').select('*'),
           supabase.from('accounts').select('*'),
@@ -243,7 +246,8 @@ export default function AdminDashboard({ user }: { user: any }) {
           supabase.from('crypto_transactions').select('*'),
           supabase.from('kyc_documents').select('*'),
           supabase.from('investment_plans').select('*'),
-          supabase.from('market_assets').select('*')
+          supabase.from('market_assets').select('*'),
+          supabase.from('trading_positions').select('*').then(res => res, () => ({ data: [] }))
         ]);
         countriesData = cRes.data;
         profilesData = pRes.data;
@@ -255,6 +259,7 @@ export default function AdminDashboard({ user }: { user: any }) {
         kycData = kRes.data;
         plansData = plRes.data;
         assetsData = asRes.data;
+        tpData = tpRes.data;
       }
 
       if (countriesData) setSupportedCountries(countriesData);
@@ -262,6 +267,7 @@ export default function AdminDashboard({ user }: { user: any }) {
       if (cryptoWalletsData) setCryptoWallets(cryptoWalletsData);
       if (txData) setTransactions(txData);
       if (auditData) setAuditLogs(auditData);
+      if (tpData) setTradingPositions(tpData);
 
       try {
         if (emlData && emlData.length > 0) {
@@ -410,289 +416,152 @@ export default function AdminDashboard({ user }: { user: any }) {
   };
 
   const handleUpdateBalance = async (accountId: string, newBalance: number, reason: string) => {
-    const userCurrInfo = getCurrencyByCountry(selectedUser?.country);
+    const targetUserId = selectedUser?.id;
+    if (!targetUserId) return;
+    
+    setLoading(true);
     try {
-      const targetUserId = selectedUser?.id || (accounts.find(a => a.id === accountId)?.user_id);
-      let targetAcc = accounts.find(a => a.id === accountId || a.user_id === targetUserId || a.userId === targetUserId);
-      const oldBalance = targetAcc ? Number(targetAcc.balance) || 0 : 0;
-
-      console.log(`[Admin Wallet System Audit] Starting balance update process for user: ${targetUserId}, account: ${accountId}`);
-
-      let updateResult: any = null;
-
-      // 1. Primary: Use Backend Admin API (supabaseAdmin Service Role Client) to bypass RLS completely
-      if (targetUserId) {
-        try {
-          const session = (await supabase.auth.getSession()).data.session;
-          const token = session?.access_token;
-          const res = await fetch('/api/admin/update-balance', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-            },
-            body: JSON.stringify({
-              accountId: accountId && !accountId.startsWith('acc_') ? accountId : undefined,
-              targetUserId,
-              newBalance,
-              reason
-            })
-          });
-          const apiJson = await res.json();
-          if (res.ok && apiJson.success) {
-            console.log('[Admin Wallet System Audit] Backend Admin API successfully persisted balance:', apiJson);
-            updateResult = apiJson.account || { user_id: targetUserId, balance: newBalance };
-          } else {
-            console.warn('[Admin Wallet System Audit] Backend Admin API returned notice:', apiJson);
-          }
-        } catch (apiErr) {
-          console.warn('[Admin Wallet System Audit] Backend Admin API fetch notice:', apiErr);
-        }
-      }
-
-      // 2. Fallback: Try client update if backend API didn't return updateResult
-      if (!updateResult && targetUserId) {
-        try {
-          const { data, error } = await supabase
-            .from('accounts')
-            .update({ balance: newBalance, updated_at: new Date().toISOString() })
-            .eq('user_id', targetUserId)
-            .select();
-          if (!error && data && data.length > 0) {
-            updateResult = data[0];
-          }
-        } catch (e) {
-          console.warn('[Admin Wallet System Audit] Client update fallback notice:', e);
-        }
-      }
-
-      if (!updateResult) {
-        updateResult = { user_id: targetUserId, balance: newBalance };
-      }
-
-      // Sync balance to profiles table if mirrored
-      if (targetUserId) {
-        try {
-          await supabase.from('profiles').update({ balance: newBalance }).eq('id', targetUserId);
-        } catch (e) {
-          console.warn('[Admin Wallet System Audit] Syncing balance to profiles table notice:', e);
-        }
-      }
-
-      // Update local state immediately for fast UI feedback
-      setAccounts(prev => {
-        const existing = prev.find(a => a.id === accountId || a.user_id === targetUserId || a.userId === targetUserId);
-        if (existing) {
-          return prev.map(a => (a.id === existing.id || a.user_id === targetUserId ? { ...a, balance: newBalance } : a));
-        } else if (targetUserId) {
-          return [...prev, {
-            id: updateResult.id || accountId,
-            user_id: targetUserId,
-            account_number: updateResult.account_number || `ACC-${targetUserId.substring(0, 6).toUpperCase()}`,
-            balance: newBalance,
-            currency: userCurrInfo.code
-          }];
-        }
-        return prev;
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      
+      const res = await fetch('/api/admin/user-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          action: 'set_account_balance',
+          targetUserId,
+          amount: newBalance,
+          reason
+        })
       });
 
-      // Update modal selectedUser.account if open
-      if (selectedUser && selectedUser.id === targetUserId) {
-        setSelectedUser((prev: any) => prev ? {
-          ...prev,
-          account: {
-            ...(prev.account || {}),
-            balance: newBalance
-          }
-        } : prev);
-      }
-      
-      // Log transaction for audit integrity
-      try {
-        const safeAccId = (updateResult?.id && !updateResult.id.startsWith('acc_')) ? updateResult.id : null;
-        await supabase.from('transactions').insert([{
-          user_id: targetUserId,
-          account_id: safeAccId,
-          type: newBalance >= oldBalance ? 'admin_credit' : 'admin_debit',
-          amount: Math.abs(newBalance - oldBalance),
-          currency: targetAcc?.currency_code || targetAcc?.currency || userCurrInfo.code,
-          status: 'completed',
-          description: `Admin balance adjustment: ${reason}`,
-          created_at: new Date().toISOString()
-        }]);
-      } catch (txErr) {
-        console.warn('[Admin Wallet System Audit] Transaction log notice:', txErr);
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || data.details || 'Balance update failed');
       }
 
-      await logAuditAction('WALLET_ADJUSTMENT', targetUserId, `Balance adjusted from ${formatCurrencyAmount(oldBalance, userCurrInfo)} to ${formatCurrencyAmount(newBalance, userCurrInfo)}. Reason: ${reason}`);
-      setMsg({ type: 'success', text: `Wallet balance updated to ${formatCurrencyAmount(newBalance, userCurrInfo)} in Supabase database and logged.` });
+      setMsg({ type: 'success', text: `Wallet balance updated successfully.` });
       setIsWalletModalOpen(false);
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId: targetUserId, newBalance } }));
-      }
-
+      loadAdminUsers();
       fetchData(true);
     } catch (err: any) {
-      console.error("[Admin Wallet System Audit Error] Failed to update balance:", err);
-      setMsg({ type: 'error', text: `Error updating balance: ${err.message || 'Database update failed'}` });
+      console.error("Admin balance update failed:", err);
+      setMsg({ type: 'error', text: `Error: ${err.message}` });
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleUserStatusUpdate = async (userId: string, statusField: string, statusValue: any, actionName: string) => {
+  const handleAdminAction = async (action: string, targetUserId: string, updates?: any, reason?: string) => {
+    if (!confirm(`Are you sure you want to perform: ${action.replace(/_/g, ' ')}?`)) return;
+    
+    setLoading(true);
     try {
-      const fieldToUpdate = statusField === 'kycStatus' ? 'kyc_status' : statusField;
-      const updates: any = { [fieldToUpdate]: statusValue };
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
       
-      // Keep transaction_pin in sync with pin if pin is updated
-      if (statusField === 'pin') {
-        updates.transaction_pin = statusValue;
+      const res = await fetch('/api/admin/user-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          action,
+          targetUserId,
+          updates,
+          reason: reason || `Admin ${action} action`
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        console.error('Admin action failure details:', data);
+        throw new Error(data.error || data.details || 'Action failed');
       }
 
-      console.log(`[Admin] Updating ${statusField} for user ${userId} to ${statusValue}...`);
-
-      // 1. Attempt update via Service Role Backend API for guaranteed persistence
-      let apiSuccess = false;
-      try {
-        const session = (await supabase.auth.getSession()).data.session;
-        const token = session?.access_token;
-        const res = await fetch('/api/admin/update-user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({
-            userId,
-            updates,
-            accountUpdates: {
-              status: statusField === 'status' || statusField === 'account_status' ? statusValue : undefined,
-              currency: statusField === 'currency' || statusField === 'currency_code' ? statusValue : undefined,
-              account_type: statusField === 'account_type' || statusField === 'accountType' ? statusValue : undefined
-            },
-            actionName,
-            details: `Updated ${statusField} to ${statusValue}`
-          })
-        });
-        const apiJson = await res.json();
-        if (res.ok && apiJson.success) {
-          apiSuccess = true;
-          console.log('[Admin] Successfully persisted user update via backend API:', apiJson);
-        }
-      } catch (apiErr) {
-        console.warn('[Admin] Backend API call failed, falling back to client update:', apiErr);
-      }
-
-      // 2. Fallback client update if API call was unreachable
-      if (!apiSuccess) {
-        await supabase.from('profiles').update(updates).eq('id', userId);
-
-        if (statusField === 'kyc_status' || statusField === 'kycStatus') {
-          await supabase.from('kyc_documents').update({ status: statusValue }).eq('user_id', userId);
-        }
-        if (statusField === 'currency' || statusField === 'currency_code') {
-          await supabase.from('accounts').update({ currency: statusValue }).eq('user_id', userId);
-        }
-        if (statusField === 'account_type' || statusField === 'accountType') {
-          await supabase.from('accounts').update({ account_type: statusValue }).eq('user_id', userId);
-        }
-        if (statusField === 'account_status' || statusField === 'status') {
-          await supabase.from('accounts').update({ status: statusValue }).eq('user_id', userId);
-        }
-
-        await logAuditAction(actionName, userId, `Updated ${statusField} to ${statusValue}`);
-      }
-
-      // Sync local storage mirror if present
-      try {
-        const storageKey = `local_profile_${userId}`;
-        const existingLocal = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        localStorage.setItem(storageKey, JSON.stringify({ ...existingLocal, ...updates, updated_at: new Date().toISOString() }));
-      } catch (e) {}
-
-      setMsg({ type: 'success', text: `User ${actionName.toLowerCase().replace(/_/g, ' ')} successfully.` });
+      setMsg({ type: 'success', text: `Action ${action.replace(/_/g, ' ')} completed successfully.` });
       
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId, statusField, statusValue } }));
+      // Update local state for immediate feedback
+      if (selectedUser && selectedUser.id === targetUserId) {
+        if (action === 'approve_kyc') setSelectedUser({ ...selectedUser, kyc_status: 'verified' });
+        if (action === 'reject_kyc') setSelectedUser({ ...selectedUser, kyc_status: 'rejected' });
+        if (action === 'update_account_status') setSelectedUser({ ...selectedUser, account_status: updates.status });
       }
+
+      loadAdminUsers();
       fetchData(true);
     } catch (err: any) {
-      console.error("[Admin] Failed to update user status:", err);
-      setMsg({ type: 'error', text: 'Failed to update user status.' });
+      console.error("Admin action failed:", err);
+      setMsg({ type: 'error', text: `Action Failed: ${err.message}` });
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleBatchSaveUser = async (updatedUserData: any) => {
     if (!updatedUserData || !updatedUserData.id) return;
     const userId = updatedUserData.id;
+    
+    setLoading(true);
     try {
       const updates = {
         first_name: updatedUserData.firstName || '',
         last_name: updatedUserData.lastName || '',
-        display_name: updatedUserData.displayName || `${updatedUserData.firstName || ''} ${updatedUserData.lastName || ''}`.trim() || updatedUserData.email?.split('@')[0] || 'User',
+        display_name: updatedUserData.displayName || '',
         role: updatedUserData.role || 'user',
-        status: updatedUserData.status || 'active',
-        kyc_status: updatedUserData.kyc_status || 'pending',
-        pin: updatedUserData.pin || '1234',
-        transaction_pin: updatedUserData.pin || '1234'
+        account_status: updatedUserData.status || updatedUserData.account_status || 'active',
+        kyc_status: updatedUserData.kyc_status || 'pending'
       };
 
-      console.log(`[Admin] Batch saving user details for ${userId}:`, updates);
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      
+      const res = await fetch('/api/admin/user-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          action: 'update_profile',
+          targetUserId: userId,
+          updates,
+          reason: 'Manual profile batch update'
+        })
+      });
 
-      let apiSuccess = false;
-      try {
-        const session = (await supabase.auth.getSession()).data.session;
-        const token = session?.access_token;
-        const res = await fetch('/api/admin/update-user', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-          },
-          body: JSON.stringify({
-            userId,
-            updates,
-            accountUpdates: {
-              status: updates.status
-            },
-            actionName: 'PROFILE_BATCH_UPDATE',
-            details: `Updated name, role (${updates.role}), status (${updates.status}), KYC (${updates.kyc_status}), and PIN`
-          })
-        });
-        const apiJson = await res.json();
-        if (res.ok && apiJson.success) {
-          apiSuccess = true;
-          console.log('[Admin] Batch update persisted via Service Role backend API:', apiJson);
-        }
-      } catch (e) {
-        console.warn('[Admin] Batch update API error:', e);
-      }
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
 
-      if (!apiSuccess) {
-        await supabase.from('profiles').update(updates).eq('id', userId);
-        await supabase.from('accounts').update({ status: updates.status }).eq('user_id', userId);
-        await supabase.from('kyc_documents').update({ status: updates.kyc_status }).eq('user_id', userId);
-        await logAuditAction('PROFILE_BATCH_UPDATE', userId, 'Updated profile details via client fallback');
-      }
-
-      // Update local storage cache
-      try {
-        const storageKey = `local_profile_${userId}`;
-        const existingLocal = JSON.parse(localStorage.getItem(storageKey) || '{}');
-        localStorage.setItem(storageKey, JSON.stringify({ ...existingLocal, ...updates, updated_at: new Date().toISOString() }));
-      } catch (e) {}
-
-      setMsg({ type: 'success', text: `User profile for ${updatedUserData.email || userId} saved successfully.` });
+      setMsg({ type: 'success', text: `User profile saved successfully.` });
       setIsEditModalOpen(false);
-
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('user_registered_or_updated', { detail: { userId, updates } }));
-      }
+      loadAdminUsers();
       fetchData(true);
     } catch (err: any) {
-      console.error("[Admin] Error batch saving user profile:", err);
-      setMsg({ type: 'error', text: 'Error saving user changes.' });
+      console.error("Batch save failed:", err);
+      setMsg({ type: 'error', text: `Error: ${err.message}` });
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleUserStatusUpdate = async (userId: string, statusField: string, statusValue: any, actionName: string) => {
+    // Legacy shim for components still calling this directly
+    const fieldToUpdate = statusField === 'kycStatus' ? 'kyc_status' : statusField;
+    const updates = { [fieldToUpdate]: statusValue };
+    
+    let action = 'update_profile';
+    if (statusField === 'kycStatus' || statusField === 'kyc_status') {
+      action = statusValue === 'approved' || statusValue === 'verified' ? 'approve_kyc' : 'reject_kyc';
+    } else if (statusField === 'status' || statusField === 'account_status') {
+      action = 'update_account_status';
+    }
+
+    await handleAdminAction(action, userId, updates, `Update ${statusField} to ${statusValue}`);
   };
 
   const handleDeleteUserRecord = async (u: any) => {
@@ -1235,10 +1104,11 @@ export default function AdminDashboard({ user }: { user: any }) {
                               <div className="flex items-center justify-end gap-1.5">
                                 <button 
                                   onClick={() => { setSelectedUser({ ...profile }); setIsEditModalOpen(true); }}
-                                  title="Edit Role / Privileges"
-                                  className="p-2 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition"
+                                  title="Manage User & KYC"
+                                  className="flex items-center gap-1 px-3 py-1.5 bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500/20 rounded-lg transition text-[11px] font-bold"
                                 >
-                                  <Edit3 size={15} />
+                                  <Edit3 size={14} />
+                                  <span>Manage</span>
                                 </button>
                                 <button 
                                   onClick={() => handleDeleteUserRecord(profile)}
@@ -1457,6 +1327,93 @@ export default function AdminDashboard({ user }: { user: any }) {
           </div>
         )}
 
+        {/* TAB 8: BROADCAST NOTIFICATIONS */}
+        {activeTab === 'notifications' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6 max-w-2xl">
+            <div className="space-y-2">
+              <h3 className="text-lg font-extrabold text-white flex items-center gap-2">
+                <Bell className="text-amber-400" size={20} />
+                Global Broadcast Communication Center
+              </h3>
+              <p className="text-xs text-gray-400">Dispatch real-time system alerts, maintenance notices, or promotional offers to all registered users simultaneously.</p>
+            </div>
+
+            <div className="space-y-4 p-5 bg-[#181a22] border border-white/5 rounded-3xl">
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest mb-2">Notification Title / Headline</label>
+                <input 
+                  type="text" 
+                  value={notifTitle}
+                  onChange={(e) => setNotifTitle(e.target.value)}
+                  placeholder="e.g. Scheduled Maintenance Update"
+                  className="w-full bg-[#121319] border border-white/10 p-4 rounded-2xl text-sm text-white focus:outline-none focus:border-indigo-500 font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest mb-2">Announcement Content / Message Body</label>
+                <textarea 
+                  value={notifBody}
+                  onChange={(e) => setNotifBody(e.target.value)}
+                  placeholder="Enter the detailed message for all users..."
+                  rows={5}
+                  className="w-full bg-[#121319] border border-white/10 p-4 rounded-2xl text-sm text-white focus:outline-none focus:border-indigo-500 resize-none font-medium"
+                />
+              </div>
+
+              <div className="flex items-center gap-4">
+                <button 
+                  disabled={loading || !notifTitle || !notifBody}
+                  onClick={async () => {
+                    setLoading(true);
+                    try {
+                      const session = (await supabase.auth.getSession()).data.session;
+                      const token = session?.access_token;
+                      const res = await fetch('/api/admin/broadcast', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                        },
+                        body: JSON.stringify({ title: notifTitle, body: notifBody })
+                      });
+                      const data = await res.json();
+                      if (res.ok && data.success) {
+                        setMsg({ type: 'success', text: `Global broadcast "${notifTitle}" has been dispatched to ${data.count || 'all'} users.` });
+                        setNotifTitle('');
+                        setNotifBody('');
+                        logAuditAction('GLOBAL_BROADCAST', 'ALL_USERS', `Sent broadcast: ${notifTitle}`);
+                      } else {
+                        throw new Error(data.error || 'Failed to send broadcast');
+                      }
+                    } catch (err: any) {
+                      setMsg({ type: 'error', text: err.message });
+                    } finally {
+                      setLoading(false);
+                    }
+                  }}
+                  className="flex-1 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-2xl font-black text-sm shadow-lg shadow-indigo-900/20 transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  {loading ? 'Dispatching...' : 'Dispatch Global Broadcast'}
+                </button>
+                <button 
+                  onClick={() => { setNotifTitle(''); setNotifBody(''); }}
+                  className="px-6 py-4 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-2xl font-bold text-sm transition"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-amber-500/5 border border-amber-500/10 p-4 rounded-2xl flex gap-3">
+              <AlertTriangle className="text-amber-500 shrink-0" size={18} />
+              <p className="text-[11px] text-amber-200/70 leading-relaxed font-medium">
+                <strong>Attention:</strong> Global broadcasts are delivered via push notification and internal message inbox. This action is tracked in the permanent audit ledger and cannot be recalled once dispatched.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* TAB: BROKER & TRADING MANAGEMENT */}
         {activeTab === 'broker' && (
           <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
@@ -1514,9 +1471,32 @@ export default function AdminDashboard({ user }: { user: any }) {
                       </td>
                       <td className="p-3.5 text-right space-x-2">
                         <button 
-                          onClick={() => {
-                            setTradingInstruments(prev => prev.map(i => i.id === inst.id ? { ...i, status: i.status === 'Open' ? 'Closed' : 'Open' } : i));
-                            logAuditAction('MARKET_STATUS_TOGGLED', 'SYSTEM', `Toggled ${inst.symbol} to ${inst.status === 'Open' ? 'Closed' : 'Open'}`);
+                          onClick={async () => {
+                            setLoading(true);
+                            try {
+                              const newStatus = inst.status === 'Open' ? 'Closed' : 'Open';
+                              const session = (await supabase.auth.getSession()).data.session;
+                              const token = session?.access_token;
+                              const res = await fetch('/api/admin/update-market-asset', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                  ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                                },
+                                body: JSON.stringify({ 
+                                  assetId: inst.id, 
+                                  updates: { is_active: newStatus === 'Open' } 
+                                })
+                              });
+                              if (!res.ok) throw new Error('Update failed');
+                              setTradingInstruments(prev => prev.map(i => i.id === inst.id ? { ...i, status: newStatus } : i));
+                              logAuditAction('MARKET_STATUS_TOGGLED', 'SYSTEM', `Toggled ${inst.symbol} to ${newStatus}`);
+                              setMsg({ type: 'success', text: `${inst.symbol} market status updated to ${newStatus}.` });
+                            } catch (err: any) {
+                              setMsg({ type: 'error', text: err.message });
+                            } finally {
+                              setLoading(false);
+                            }
                           }}
                           className="px-3 py-1 bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 rounded-lg text-[11px] font-bold transition"
                         >
@@ -1527,6 +1507,91 @@ export default function AdminDashboard({ user }: { user: any }) {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="pt-6 border-t border-white/10 space-y-4">
+              <div className="flex items-center gap-2">
+                <Activity className="text-rose-500" size={18} />
+                <h4 className="text-sm font-black text-white uppercase tracking-wider">System-Wide Active Trading Positions</h4>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-[#181a22] text-[10px] font-mono uppercase text-gray-400">
+                    <tr>
+                      <th className="p-3.5 border-b border-white/10">User</th>
+                      <th className="p-3.5 border-b border-white/10">Asset / Type</th>
+                      <th className="p-3.5 border-b border-white/10">Amount / Entry</th>
+                      <th className="p-3.5 border-b border-white/10">P&L</th>
+                      <th className="p-3.5 border-b border-white/10 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-xs font-medium divide-y divide-white/5">
+                    {tradingPositions.filter(p => p.status === 'open').length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="p-8 text-center text-gray-500 italic">No active trading positions found in the system.</td>
+                      </tr>
+                    )}
+                    {tradingPositions.filter(p => p.status === 'open').map((pos: any) => {
+                      const posUser = users.find(u => u.id === pos.user_id);
+                      return (
+                        <tr key={pos.id} className="hover:bg-white/5">
+                          <td className="p-3.5">
+                            <div className="flex flex-col">
+                              <span className="text-white font-bold">{posUser?.display_name || 'User'}</span>
+                              <span className="text-[10px] text-gray-500 font-mono">{pos.user_id.substring(0, 8)}</span>
+                            </div>
+                          </td>
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-2">
+                              <span className="text-white font-black">{pos.asset_symbol}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${pos.type === 'buy' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                                {pos.type}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="p-3.5 text-gray-300">
+                            {pos.amount} units @ ${pos.entry_price}
+                          </td>
+                          <td className={`p-3.5 font-black ${Number(pos.profit_loss || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {Number(pos.profit_loss || 0) >= 0 ? '+' : ''}${Number(pos.profit_loss || 0).toFixed(2)}
+                          </td>
+                          <td className="p-3.5 text-right">
+                            <button 
+                              onClick={async () => {
+                                if (!confirm('Are you sure you want to FORCE CLOSE this position at the current market price?')) return;
+                                setLoading(true);
+                                try {
+                                  const session = (await supabase.auth.getSession()).data.session;
+                                  const token = session?.access_token;
+                                  const res = await fetch('/api/admin/force-close-position', {
+                                    method: 'POST',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                                    },
+                                    body: JSON.stringify({ positionId: pos.id })
+                                  });
+                                  if (!res.ok) throw new Error('Force close failed');
+                                  setMsg({ type: 'success', text: `Position #${pos.id.substring(0, 8)} force closed.` });
+                                  fetchData(true);
+                                } catch (err: any) {
+                                  setMsg({ type: 'error', text: err.message });
+                                } finally {
+                                  setLoading(false);
+                                }
+                              }}
+                              className="px-3 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-lg text-[10px] font-bold transition"
+                            >
+                              Force Close
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}
@@ -1541,20 +1606,7 @@ export default function AdminDashboard({ user }: { user: any }) {
               </div>
               <button 
                 onClick={() => {
-                  const name = prompt('Plan Name:');
-                  if (!name) return;
-                  const roi = prompt('ROI Rate (%):', '8.5%') || '8.5%';
-                  const dur = prompt('Duration:', '14 Days') || '14 Days';
-                  setInvestmentPlans(prev => [...prev, {
-                    id: 'plan_' + Math.random().toString(36).substring(2, 7),
-                    name,
-                    roi,
-                    duration: dur,
-                    minInv: 250,
-                    maxInv: 25000,
-                    active: true
-                  }]);
-                  logAuditAction('INVESTMENT_PLAN_CREATED', 'SYSTEM', `Created plan ${name}`);
+                  alert('Management system for creating new plans is being finalized. Please use Toggle for existing plans.');
                 }}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-xs font-bold transition"
               >
@@ -1578,9 +1630,32 @@ export default function AdminDashboard({ user }: { user: any }) {
                     <p className="flex justify-between"><span>Max Cap:</span> <span className="font-bold text-white">${plan.maxInv.toLocaleString()}</span></p>
                   </div>
                   <button 
-                    onClick={() => {
-                      setInvestmentPlans(prev => prev.map(p => p.id === plan.id ? { ...p, active: !p.active } : p));
-                      logAuditAction('INVESTMENT_PLAN_TOGGLED', 'SYSTEM', `Toggled plan ${plan.name}`);
+                    onClick={async () => {
+                      setLoading(true);
+                      try {
+                        const newActive = !plan.active;
+                        const session = (await supabase.auth.getSession()).data.session;
+                        const token = session?.access_token;
+                        const res = await fetch('/api/admin/update-investment-plan', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+                          },
+                          body: JSON.stringify({ 
+                            planId: plan.id, 
+                            updates: { is_active: newActive } 
+                          })
+                        });
+                        if (!res.ok) throw new Error('Update failed');
+                        setInvestmentPlans(prev => prev.map(p => p.id === plan.id ? { ...p, active: newActive } : p));
+                        logAuditAction('INVESTMENT_PLAN_TOGGLED', 'SYSTEM', `Toggled plan ${plan.name} to ${newActive ? 'Active' : 'Disabled'}`);
+                        setMsg({ type: 'success', text: `Investment plan ${plan.name} is now ${newActive ? 'active' : 'disabled'}.` });
+                      } catch (err: any) {
+                        setMsg({ type: 'error', text: err.message });
+                      } finally {
+                        setLoading(false);
+                      }
                     }}
                     className="w-full mt-3 py-2 bg-white/5 hover:bg-white/10 text-gray-200 border border-white/10 rounded-xl font-bold text-xs transition"
                   >
@@ -2006,6 +2081,51 @@ export default function AdminDashboard({ user }: { user: any }) {
             </div>
 
             <div className="space-y-4 text-xs max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
+              <div className="p-4 bg-indigo-500/5 border border-indigo-500/10 rounded-2xl space-y-4">
+                <h4 className="text-[10px] font-mono font-bold text-indigo-400 uppercase tracking-widest">Priority Admin Actions</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {(selectedUser.kyc_status === 'pending' || selectedUser.kyc_status === 'Unverified') && (
+                    <>
+                      <button 
+                        disabled={loading}
+                        onClick={() => handleAdminAction('approve_kyc', selectedUser.id, {}, 'Approving user identity documents')}
+                        className="flex items-center justify-center gap-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition disabled:opacity-50"
+                      >
+                        <ShieldCheck size={16} />
+                        Approve KYC
+                      </button>
+                      <button 
+                        disabled={loading}
+                        onClick={() => handleAdminAction('reject_kyc', selectedUser.id, {}, 'Rejecting user identity documents')}
+                        className="flex items-center justify-center gap-2 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold transition disabled:opacity-50"
+                      >
+                        <ShieldAlert size={16} />
+                        Reject KYC
+                      </button>
+                    </>
+                  )}
+                  {selectedUser.account_status === 'suspended' ? (
+                    <button 
+                      disabled={loading}
+                      onClick={() => handleAdminAction('update_account_status', selectedUser.id, { status: 'active' }, 'Reactivating user account')}
+                      className="col-span-2 flex items-center justify-center gap-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold transition disabled:opacity-50"
+                    >
+                      <CheckCircle size={16} />
+                      Activate Account
+                    </button>
+                  ) : (
+                    <button 
+                      disabled={loading}
+                      onClick={() => handleAdminAction('update_account_status', selectedUser.id, { status: 'suspended' }, 'Suspending user account due to policy violation')}
+                      className="col-span-2 flex items-center justify-center gap-2 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold transition disabled:opacity-50"
+                    >
+                      <UserX size={16} />
+                      Suspend Account
+                    </button>
+                  )}
+                </div>
+              </div>
+
               <div>
                 <label className="block font-bold text-gray-400 uppercase mb-1">User Email</label>
                 <input type="text" disabled value={selectedUser.email || ''} className="w-full p-3 bg-[#181a22] rounded-xl text-gray-300 font-mono" />

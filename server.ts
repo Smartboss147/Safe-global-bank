@@ -87,7 +87,8 @@ app.get('/api/admin/all-data', verifyAdmin, async (req, res) => {
       { data: kycDocsData },
       { data: investmentPlansData },
       { data: marketAssetsData },
-      { data: tradingAccountsData }
+      { data: tradingAccountsData },
+      { data: tradingPositionsData }
     ] = await Promise.all([
       supabaseAdmin.from('supported_countries').select('*').order('country_name'),
       supabaseAdmin.from('profiles').select('*'),
@@ -100,7 +101,8 @@ app.get('/api/admin/all-data', verifyAdmin, async (req, res) => {
       supabaseAdmin.from('kyc_documents').select('*'),
       supabaseAdmin.from('investment_plans').select('*'),
       supabaseAdmin.from('market_assets').select('*'),
-      supabaseAdmin.from('trading_accounts').select('*').then(res => res, () => ({ data: [] }))
+      supabaseAdmin.from('trading_accounts').select('*').then(res => res, () => ({ data: [] })),
+      supabaseAdmin.from('trading_positions').select('*').then(res => res, () => ({ data: [] }))
     ]);
 
     res.json({
@@ -116,7 +118,8 @@ app.get('/api/admin/all-data', verifyAdmin, async (req, res) => {
       kycDocs: kycDocsData || [],
       investmentPlans: investmentPlansData || [],
       marketAssets: marketAssetsData || [],
-      tradingAccounts: tradingAccountsData || []
+      tradingAccounts: tradingAccountsData || [],
+      tradingPositions: tradingPositionsData || []
     });
   } catch (err: any) {
     console.error('[Server Admin API Error] all-data exception:', err);
@@ -816,6 +819,322 @@ app.post('/api/trading/execute-order', async (req, res) => {
   } catch (err: any) {
     console.error('[Server Trading Error] Failed to execute trade:', err);
     res.status(500).json({ error: err.message || 'Trade execution failed' });
+  }
+});
+
+// Secure Admin Action Unified Endpoint
+app.post('/api/admin/user-action', verifyAdmin, async (req, res) => {
+  const { action, targetUserId, amount, reason, updates, metadata } = req.body;
+  const admin = (req as any).admin;
+
+  if (!action || !targetUserId) {
+    return res.status(400).json({ error: 'Missing action or targetUserId' });
+  }
+
+  try {
+    console.log(`[Admin Action] ${action} by ${admin.email} on ${targetUserId}`);
+
+    let result = null;
+    let beforeValue: any = null;
+    let afterValue: any = null;
+
+    // Fetch before value for auditing where possible
+    if (action === 'approve_kyc' || action === 'reject_kyc' || action === 'update_profile' || action === 'update_account_status') {
+      const { data } = await supabaseAdmin.from('profiles').select('*').eq('id', targetUserId).maybeSingle();
+      beforeValue = data;
+    }
+
+    switch (action) {
+      case 'approve_kyc':
+        const { data: kycRes, error: kycErr } = await supabaseAdmin
+          .from('profiles')
+          .update({ 
+            kyc_status: 'verified',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', targetUserId)
+          .select()
+          .single();
+        
+        if (kycErr) throw kycErr;
+        
+        // Atomic update to kyc_documents if it exists
+        await supabaseAdmin
+          .from('kyc_documents')
+          .update({ 
+            status: 'verified', 
+            verified_at: new Date().toISOString(),
+            verified_by: admin.id
+          })
+          .eq('user_id', targetUserId);
+          
+        result = kycRes;
+        afterValue = { kyc_status: 'verified' };
+        break;
+
+      case 'reject_kyc':
+        const { data: rKycRes, error: rKycErr } = await supabaseAdmin
+          .from('profiles')
+          .update({ kyc_status: 'rejected' })
+          .eq('id', targetUserId)
+          .select()
+          .single();
+        if (rKycErr) throw rKycErr;
+        
+        await supabaseAdmin
+          .from('kyc_documents')
+          .update({ status: 'rejected' })
+          .eq('user_id', targetUserId);
+          
+        result = rKycRes;
+        afterValue = { kyc_status: 'rejected' };
+        break;
+
+      case 'update_account_status':
+        const { data: statusRes, error: statusErr } = await supabaseAdmin
+          .from('profiles')
+          .update({ account_status: updates.status })
+          .eq('id', targetUserId)
+          .select()
+          .single();
+        if (statusErr) throw statusErr;
+        
+        // Sync to accounts
+        await supabaseAdmin.from('accounts').update({ status: updates.status }).eq('user_id', targetUserId);
+        
+        result = statusRes;
+        afterValue = { account_status: updates.status };
+        break;
+
+      case 'credit_wallet':
+      case 'debit_wallet':
+      case 'set_account_balance':
+        const { data: acc } = await supabaseAdmin.from('accounts').select('balance, currency').eq('user_id', targetUserId).maybeSingle();
+        const oldBal = Number(acc?.balance || 0);
+        let newBal = oldBal;
+        
+        if (action === 'credit_wallet') newBal = oldBal + Number(amount);
+        else if (action === 'debit_wallet') newBal = oldBal - Number(amount);
+        else if (action === 'set_account_balance') newBal = Number(amount);
+
+        if (isNaN(newBal)) throw new Error('Invalid numeric amount');
+
+        const { data: balRes, error: balErr } = await supabaseAdmin
+          .from('accounts')
+          .update({ balance: newBal, updated_at: new Date().toISOString() })
+          .eq('user_id', targetUserId)
+          .select()
+          .single();
+        if (balErr) throw balErr;
+
+        // Sync to profile if column exists
+        await supabaseAdmin.from('profiles').update({ balance: newBal }).eq('id', targetUserId);
+
+        // Record Ledger Transaction
+        await supabaseAdmin.from('transactions').insert([{
+          user_id: targetUserId,
+          type: action === 'credit_wallet' ? 'admin_credit' : action === 'debit_wallet' ? 'admin_debit' : 'adjustment',
+          amount: Math.abs(newBal - oldBal),
+          currency: acc?.currency || 'USD',
+          status: 'completed',
+          description: `Admin balance adjustment: ${reason}`,
+          created_at: new Date().toISOString()
+        }]);
+
+        result = balRes;
+        beforeValue = { balance: oldBal };
+        afterValue = { balance: newBal };
+        break;
+
+      case 'update_profile':
+        const { data: profRes, error: profErr } = await supabaseAdmin
+          .from('profiles')
+          .update({
+            ...updates,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', targetUserId)
+          .select()
+          .single();
+        if (profErr) throw profErr;
+        result = profRes;
+        afterValue = updates;
+        break;
+
+      default:
+        throw new Error(`Unknown action: ${action}`);
+    }
+
+    // CREATE AUDIT RECORD
+    await supabaseAdmin.from('audit_logs').insert([{
+      admin_id: admin.id,
+      admin_email: admin.email,
+      action: action.toUpperCase(),
+      target_user: targetUserId,
+      details: reason || `Performed ${action} on user ${targetUserId}`,
+      before_value: beforeValue ? JSON.stringify(beforeValue) : null,
+      after_value: afterValue ? JSON.stringify(afterValue) : null,
+      ip_address: req.ip || '127.0.0.1',
+      created_at: new Date().toISOString()
+    }]);
+
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    console.error(`[Admin Action Error] ${action}:`, err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message,
+      details: err.details,
+      hint: err.hint,
+      code: err.code 
+    });
+  }
+});
+
+app.post('/api/admin/broadcast', verifyAdmin, async (req, res) => {
+  const { title, body } = req.body;
+  const admin = (req as any).admin;
+
+  if (!title || !body) {
+    return res.status(400).json({ success: false, error: 'Title and body are required' });
+  }
+
+  try {
+    // In a real system, we'd insert into a notifications table that users query.
+    // Since we don't have one, we log it and optionally could update a 'global_alert' in a config table.
+    await supabaseAdmin.from('audit_logs').insert([{
+      admin_id: admin.id,
+      admin_email: admin.email,
+      action: 'GLOBAL_BROADCAST',
+      target_user: 'ALL_USERS',
+      details: `Broadcast: ${title} | Body: ${body.substring(0, 100)}...`,
+      after_value: JSON.stringify({ title, body }),
+      created_at: new Date().toISOString()
+    }]);
+
+    const { count } = await supabaseAdmin.from('profiles').select('*', { count: 'exact', head: true });
+
+    res.json({ success: true, count: count || 0 });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/update-market-asset', verifyAdmin, async (req, res) => {
+  const { assetId, updates } = req.body;
+  const admin = (req as any).admin;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('market_assets')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', assetId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await supabaseAdmin.from('audit_logs').insert([{
+      admin_id: admin.id,
+      admin_email: admin.email,
+      action: 'MARKET_ASSET_UPDATE',
+      target_user: 'SYSTEM',
+      details: `Updated market asset ${assetId}: ${JSON.stringify(updates)}`,
+      created_at: new Date().toISOString()
+    }]);
+
+    res.json({ success: true, data });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/update-investment-plan', verifyAdmin, async (req, res) => {
+  const { planId, updates } = req.body;
+  const admin = (req as any).admin;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('investment_plans')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', planId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await supabaseAdmin.from('audit_logs').insert([{
+      admin_id: admin.id,
+      admin_email: admin.email,
+      action: 'INVESTMENT_PLAN_UPDATE',
+      target_user: 'SYSTEM',
+      details: `Updated investment plan ${planId}: ${JSON.stringify(updates)}`,
+      created_at: new Date().toISOString()
+    }]);
+
+    res.json({ success: true, data });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/admin/force-close-position', verifyAdmin, async (req, res) => {
+  const { positionId } = req.body;
+  const admin = (req as any).admin;
+
+  try {
+    const { data: pos, error: posFetchError } = await supabaseAdmin
+      .from('trading_positions')
+      .select('*')
+      .eq('id', positionId)
+      .single();
+
+    if (posFetchError || !pos) throw new Error('Position not found');
+
+    // In a real system, we'd fetch the current market price
+    // Here we'll simulate a close at a random price close to entry
+    const closePrice = Number(pos.entry_price) * (1 + (Math.random() - 0.45) * 0.02);
+    const profitLoss = pos.type === 'buy' 
+      ? (closePrice - Number(pos.entry_price)) * Number(pos.amount)
+      : (Number(pos.entry_price) - closePrice) * Number(pos.amount);
+
+    const { error: updateError } = await supabaseAdmin
+      .from('trading_positions')
+      .update({
+        status: 'closed',
+        close_price: closePrice,
+        profit_loss: profitLoss,
+        closed_at: new Date().toISOString()
+      })
+      .eq('id', positionId);
+
+    if (updateError) throw updateError;
+
+    // Refund/Adjust account balance
+    const { data: acc } = await supabaseAdmin.from('accounts').select('balance').eq('user_id', pos.user_id).single();
+    if (acc) {
+      const newBalance = Number(acc.balance) + profitLoss;
+      await supabaseAdmin.from('accounts').update({ balance: newBalance }).eq('user_id', pos.user_id);
+    }
+
+    await supabaseAdmin.from('audit_logs').insert([{
+      admin_id: admin.id,
+      admin_email: admin.email,
+      action: 'FORCE_CLOSE_POSITION',
+      target_user: pos.user_id,
+      details: `Force closed position #${positionId} @ ${closePrice.toFixed(4)}. P&L: ${profitLoss.toFixed(2)}`,
+      created_at: new Date().toISOString()
+    }]);
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
