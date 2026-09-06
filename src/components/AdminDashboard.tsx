@@ -410,34 +410,44 @@ export default function AdminDashboard({ user }: { user: any }) {
     try {
       console.log(`[Admin Wallet System Audit] Starting ${balanceType} balance update process for user: ${targetUserId}`);
 
+      // Confirm the user is authenticated
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      if (authError || !authUser) throw new Error('Authentication required');
+
       // Validate UUID
       if (!isValidUuid(targetUserId)) {
         throw new Error('The target user has an invalid profile ID');
       }
 
-      const { data, error } = await supabase.functions.invoke('admin-user-action', {
-        body: {
-          action: 'update_crypto_balance',
-          targetUserId,
-          updates: {
-            balanceType,
-            asset,
-            newBalance
-          },
-          reason
-        }
+      const { data, error } = await supabase.rpc('admin_apply_action', {
+        p_action: 'update_crypto_balance',
+        p_target_user_id: targetUserId,
+        p_wallet_type: balanceType,
+        p_amount: newBalance,
+        p_reason: reason,
+        p_reference: asset
       });
 
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Backend Admin API response error');
+      if (error) {
+        console.error('RPC Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
 
-      console.log('[Admin Wallet System Audit] Edge Function successfully persisted crypto/trading balance:', data);
+      console.log('[Admin Wallet System Audit] RPC successfully persisted crypto/trading balance:', data);
       setMsg({ type: 'success', text: `${balanceType === 'crypto' ? asset : 'Trading'} wallet balance updated to ${newBalance} successfully.` });
       setIsWalletModalOpen(false);
       fetchData(true);
     } catch (err: any) {
       console.error("[Admin Wallet System Audit Error] Failed to update balance:", err);
-      setMsg({ type: 'error', text: `Error updating balance: ${err.message || 'Database update failed'}` });
+      setMsg({ 
+        type: 'error', 
+        text: err.message || err.details || 'Database update failed' 
+      });
     }
   };
 
@@ -447,25 +457,33 @@ export default function AdminDashboard({ user }: { user: any }) {
     
     setLoading(true);
     try {
+      // Confirm the user is authenticated
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      if (authError || !authUser) throw new Error('Authentication required');
+
       // Validate UUID
       if (!isValidUuid(targetUserId)) {
         throw new Error('The selected user has an invalid profile ID');
       }
 
-      const { data, error } = await supabase.functions.invoke('admin-user-action', {
-        body: {
-          action: 'set_wallet_balance',
-          targetUserId,
-          amount: newBalance,
-          reason,
-          metadata: {
-            walletType: 'main'
-          }
-        }
+      const { data, error } = await supabase.rpc('admin_apply_action', {
+        p_action: 'set_wallet_balance',
+        p_target_user_id: targetUserId,
+        p_wallet_type: 'main',
+        p_amount: newBalance,
+        p_reason: reason,
+        p_reference: null
       });
 
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Balance update failed');
+      if (error) {
+        console.error('RPC Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
 
       setMsg({ type: 'success', text: `Wallet balance updated successfully.` });
       setIsWalletModalOpen(false);
@@ -473,7 +491,10 @@ export default function AdminDashboard({ user }: { user: any }) {
       fetchData(true);
     } catch (err: any) {
       console.error("Admin balance update failed:", err);
-      setMsg({ type: 'error', text: `Error: ${err.message}` });
+      setMsg({ 
+        type: 'error', 
+        text: err.message || err.details || 'Error updating balance'
+      });
     } finally {
       setLoading(false);
     }
@@ -493,23 +514,32 @@ export default function AdminDashboard({ user }: { user: any }) {
 
     setLoading(true);
     try {
+      // Confirm the user is authenticated
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      if (authError || !authUser) throw new Error('Authentication required');
+
       // Validate UUID
       if (!isValidUuid(targetUserId)) {
         throw new Error('The selected user has an invalid profile ID (must be a valid UUID)');
       }
 
-      const { data, error } = await supabase.functions.invoke('admin-user-action', {
-        body: {
-          action,
-          targetUserId,
-          updates,
-          reason: reason || `Admin ${action} action`
-        }
+      const { data, error } = await supabase.rpc('admin_apply_action', {
+        p_action: action,
+        p_target_user_id: targetUserId,
+        p_wallet_type: updates?.walletType || null,
+        p_amount: typeof updates === 'number' ? updates : (updates?.amount || null),
+        p_reason: reason || `Admin ${action} action`,
+        p_reference: updates?.reference || (updates?.status ? JSON.stringify({ status: updates.status }) : null)
       });
 
-      if (error) throw error;
-      if (!data?.success) {
-        throw new Error(data?.error || 'Admin action failed');
+      if (error) {
+        console.error('RPC Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
       }
 
       setMsg({ type: 'success', text: `Action ${action.replace(/_/g, ' ')} completed successfully.` });
@@ -546,6 +576,10 @@ export default function AdminDashboard({ user }: { user: any }) {
     
     setLoading(true);
     try {
+      // Confirm the user is authenticated
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+      if (authError || !authUser) throw new Error('Authentication required');
+
       // Validate UUID
       if (!isValidUuid(userId)) {
         throw new Error('User has an invalid profile ID');
@@ -560,17 +594,24 @@ export default function AdminDashboard({ user }: { user: any }) {
         kyc_status: updatedUserData.kyc_status || 'pending'
       };
 
-      const { data, error } = await supabase.functions.invoke('admin-user-action', {
-        body: {
-          action: 'update_profile',
-          targetUserId: userId,
-          updates,
-          reason: 'Manual profile batch update'
-        }
+      const { data, error } = await supabase.rpc('admin_apply_action', {
+        p_action: 'update_profile',
+        p_target_user_id: userId,
+        p_wallet_type: null,
+        p_amount: null,
+        p_reason: 'Manual profile batch update',
+        p_reference: JSON.stringify(updates)
       });
 
-      if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Update failed');
+      if (error) {
+        console.error('RPC Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        throw error;
+      }
 
       setMsg({ type: 'success', text: `User profile saved successfully.` });
       setIsEditModalOpen(false);
@@ -578,7 +619,10 @@ export default function AdminDashboard({ user }: { user: any }) {
       fetchData(true);
     } catch (err: any) {
       console.error("Batch save failed:", err);
-      setMsg({ type: 'error', text: `Error: ${err.message}` });
+      setMsg({ 
+        type: 'error', 
+        text: err.message || err.details || 'Error: Update failed' 
+      });
     } finally {
       setLoading(false);
     }
@@ -2483,6 +2527,10 @@ export default function AdminDashboard({ user }: { user: any }) {
                               rawAmount: walletAmount
                             });
 
+                            // Confirm the user is authenticated
+                            const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+                            if (authError || !authUser) throw new Error('Authentication required');
+
                             // Validate UUID
                             if (!isValidUuid(selectedUser?.id)) {
                               throw new Error('The selected user has an invalid profile ID');
@@ -2503,21 +2551,23 @@ export default function AdminDashboard({ user }: { user: any }) {
                             }
                             const amount = Math.round(numericAmount * 100) / 100;
 
-                            const { data, error } = await supabase.functions.invoke('admin-user-action', {
-                              body: {
-                                action: walletActionType === 'credit' ? 'credit_wallet' : walletActionType === 'debit' ? 'debit_wallet' : 'set_wallet_balance',
-                                targetUserId: selectedUser.id,
-                                amount,
-                                reason: walletReason.trim(),
-                                metadata: {
-                                  walletType: walletBalanceType
-                                }
-                              }
+                            const { data, error } = await supabase.rpc('admin_apply_action', {
+                              p_action: walletActionType === 'credit' ? 'credit_wallet' : walletActionType === 'debit' ? 'debit_wallet' : 'set_wallet_balance',
+                              p_target_user_id: selectedUser.id,
+                              p_amount: amount,
+                              p_wallet_type: walletBalanceType,
+                              p_reason: walletReason.trim(),
+                              p_reference: null
                             });
                             
-                            if (error) throw error;
-                            if (!data?.success) {
-                              throw new Error(data?.error || 'Failed to update wallet');
+                            if (error) {
+                              console.error('RPC Error details:', {
+                                code: error.code,
+                                message: error.message,
+                                details: error.details,
+                                hint: error.hint
+                              });
+                              throw error;
                             }
 
                             setMsg({ type: 'success', text: `Wallet successfully updated. New balance: ${formatCurrencyAmount(newEstimatedBalance, currencyInfo)}` });
