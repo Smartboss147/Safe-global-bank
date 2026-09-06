@@ -12,6 +12,11 @@ import { useNavigate } from 'react-router-dom';
 import { getLocalEmailAuditLogs } from '../services/cryptoEmailService';
 import ThemeToggle from './ThemeToggle';
 
+function isValidUuid(value: any) {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 export default function AdminDashboard({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState('users'); // Default to Users tab like screenshot
   const [sidebarSearch, setSidebarSearch] = useState('');
@@ -405,32 +410,31 @@ export default function AdminDashboard({ user }: { user: any }) {
     try {
       console.log(`[Admin Wallet System Audit] Starting ${balanceType} balance update process for user: ${targetUserId}`);
 
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      
-      const res = await fetch('/api/admin/update-crypto-balance', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
+      // Validate UUID
+      if (!isValidUuid(targetUserId)) {
+        throw new Error('The target user has an invalid profile ID');
+      }
+
+      const { data, error } = await supabase.functions.invoke('admin-user-action', {
+        body: {
+          action: 'update_crypto_balance',
           targetUserId,
-          balanceType,
-          asset,
-          newBalance,
+          updates: {
+            balanceType,
+            asset,
+            newBalance
+          },
           reason
-        })
+        }
       });
 
-      const apiJson = await res.json();
-      if (res.ok && apiJson.success) {
-        console.log('[Admin Wallet System Audit] Backend Admin API successfully persisted crypto/trading balance:', apiJson);
-        setMsg({ type: 'success', text: `${balanceType === 'crypto' ? asset : 'Trading'} wallet balance updated to ${newBalance} successfully.` });
-        setIsWalletModalOpen(false);
-      } else {
-        throw new Error(apiJson.error || 'Backend Admin API response error');
-      }
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Backend Admin API response error');
+
+      console.log('[Admin Wallet System Audit] Edge Function successfully persisted crypto/trading balance:', data);
+      setMsg({ type: 'success', text: `${balanceType === 'crypto' ? asset : 'Trading'} wallet balance updated to ${newBalance} successfully.` });
+      setIsWalletModalOpen(false);
+      fetchData(true);
     } catch (err: any) {
       console.error("[Admin Wallet System Audit Error] Failed to update balance:", err);
       setMsg({ type: 'error', text: `Error updating balance: ${err.message || 'Database update failed'}` });
@@ -443,27 +447,25 @@ export default function AdminDashboard({ user }: { user: any }) {
     
     setLoading(true);
     try {
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      
-      const res = await fetch('/api/admin/user-action', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
-          action: 'set_account_balance',
+      // Validate UUID
+      if (!isValidUuid(targetUserId)) {
+        throw new Error('The selected user has an invalid profile ID');
+      }
+
+      const { data, error } = await supabase.functions.invoke('admin-user-action', {
+        body: {
+          action: 'set_wallet_balance',
           targetUserId,
           amount: newBalance,
-          reason
-        })
+          reason,
+          metadata: {
+            walletType: 'main'
+          }
+        }
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || data.details || 'Balance update failed');
-      }
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Balance update failed');
 
       setMsg({ type: 'success', text: `Wallet balance updated successfully.` });
       setIsWalletModalOpen(false);
@@ -480,29 +482,34 @@ export default function AdminDashboard({ user }: { user: any }) {
   const handleAdminAction = async (action: string, targetUserId: string, updates?: any, reason?: string) => {
     if (!confirm(`Are you sure you want to perform: ${action.replace(/_/g, ' ')}?`)) return;
     
+    // Diagnostic log before request
+    console.log('Admin action input:', {
+      action,
+      targetUserId,
+      targetUserIdType: typeof targetUserId,
+      targetUserIdLength: typeof targetUserId === 'string' ? targetUserId.length : null,
+      updates,
+    });
+
     setLoading(true);
     try {
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      
-      const res = await fetch('/api/admin/user-action', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
+      // Validate UUID
+      if (!isValidUuid(targetUserId)) {
+        throw new Error('The selected user has an invalid profile ID (must be a valid UUID)');
+      }
+
+      const { data, error } = await supabase.functions.invoke('admin-user-action', {
+        body: {
           action,
           targetUserId,
           updates,
           reason: reason || `Admin ${action} action`
-        })
+        }
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        console.error('Admin action failure details:', data);
-        throw new Error(data.error || data.details || 'Action failed');
+      if (error) throw error;
+      if (!data?.success) {
+        throw new Error(data?.error || 'Admin action failed');
       }
 
       setMsg({ type: 'success', text: `Action ${action.replace(/_/g, ' ')} completed successfully.` });
@@ -517,8 +524,17 @@ export default function AdminDashboard({ user }: { user: any }) {
       loadAdminUsers();
       fetchData(true);
     } catch (err: any) {
-      console.error("Admin action failed:", err);
-      setMsg({ type: 'error', text: `Action Failed: ${err.message}` });
+      console.error('Admin action failed:', {
+        name: err?.name,
+        message: err?.message,
+        details: err?.details,
+        hint: err?.hint,
+        code: err?.code,
+      });
+      setMsg({ 
+        type: 'error', 
+        text: err?.message || err?.details || err?.hint || 'The admin action failed' 
+      });
     } finally {
       setLoading(false);
     }
@@ -530,6 +546,11 @@ export default function AdminDashboard({ user }: { user: any }) {
     
     setLoading(true);
     try {
+      // Validate UUID
+      if (!isValidUuid(userId)) {
+        throw new Error('User has an invalid profile ID');
+      }
+
       const updates = {
         first_name: updatedUserData.firstName || '',
         last_name: updatedUserData.lastName || '',
@@ -539,25 +560,17 @@ export default function AdminDashboard({ user }: { user: any }) {
         kyc_status: updatedUserData.kyc_status || 'pending'
       };
 
-      const session = (await supabase.auth.getSession()).data.session;
-      const token = session?.access_token;
-      
-      const res = await fetch('/api/admin/user-action', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({
+      const { data, error } = await supabase.functions.invoke('admin-user-action', {
+        body: {
           action: 'update_profile',
           targetUserId: userId,
           updates,
           reason: 'Manual profile batch update'
-        })
+        }
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || 'Update failed');
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.error || 'Update failed');
 
       setMsg({ type: 'success', text: `User profile saved successfully.` });
       setIsEditModalOpen(false);
@@ -2462,38 +2475,68 @@ export default function AdminDashboard({ user }: { user: any }) {
                         onClick={async () => {
                           setLoading(true);
                           try {
-                            const session = (await supabase.auth.getSession()).data.session;
-                            const token = session?.access_token;
-                            
-                            const res = await fetch('/api/admin/user-action', {
-                              method: 'POST',
-                              headers: {
-                                'Content-Type': 'application/json',
-                                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
-                              },
-                              body: JSON.stringify({
+                            // Diagnostic log
+                            console.log('Admin wallet adjustment input:', {
+                              action: walletActionType,
+                              targetUserId: selectedUser.id,
+                              walletType: walletBalanceType,
+                              rawAmount: walletAmount
+                            });
+
+                            // Validate UUID
+                            if (!isValidUuid(selectedUser?.id)) {
+                              throw new Error('The selected user has an invalid profile ID');
+                            }
+
+                            // Validate and Normalize Amount
+                            const rawAmount = String(walletAmount ?? '').trim();
+                            if (!rawAmount) {
+                              throw new Error('Amount is required');
+                            }
+                            const normalizedAmount = rawAmount.replace(/[$,\s]/g, '');
+                            const numericAmount = Number(normalizedAmount);
+                            if (!Number.isFinite(numericAmount)) {
+                              throw new Error('Enter a valid numeric amount');
+                            }
+                            if (numericAmount <= 0) {
+                              throw new Error('Amount must be greater than zero');
+                            }
+                            const amount = Math.round(numericAmount * 100) / 100;
+
+                            const { data, error } = await supabase.functions.invoke('admin-user-action', {
+                              body: {
                                 action: walletActionType === 'credit' ? 'credit_wallet' : walletActionType === 'debit' ? 'debit_wallet' : 'set_wallet_balance',
                                 targetUserId: selectedUser.id,
-                                amount: walletAmount,
-                                reason: walletReason,
+                                amount,
+                                reason: walletReason.trim(),
                                 metadata: {
                                   walletType: walletBalanceType
                                 }
-                              })
+                              }
                             });
                             
-                            const data = await res.json();
-                            if (res.ok && data.success) {
-                              setMsg({ type: 'success', text: `Wallet successfully updated. New balance: ${formatCurrencyAmount(newEstimatedBalance, currencyInfo)}` });
-                              fetchData(true);
-                              fetchWalletLedger(selectedUser.id);
-                              setWalletAmount('');
-                              setWalletReason('');
-                            } else {
-                              throw new Error(data.error || 'Failed to update wallet');
+                            if (error) throw error;
+                            if (!data?.success) {
+                              throw new Error(data?.error || 'Failed to update wallet');
                             }
+
+                            setMsg({ type: 'success', text: `Wallet successfully updated. New balance: ${formatCurrencyAmount(newEstimatedBalance, currencyInfo)}` });
+                            fetchData(true);
+                            fetchWalletLedger(selectedUser.id);
+                            setWalletAmount('');
+                            setWalletReason('');
                           } catch (err: any) {
-                            setMsg({ type: 'error', text: err.message });
+                            console.error('Admin wallet action failed:', {
+                              name: err?.name,
+                              message: err?.message,
+                              details: err?.details,
+                              hint: err?.hint,
+                              code: err?.code,
+                            });
+                            setMsg({ 
+                              type: 'error', 
+                              text: err?.message || err?.details || err?.hint || 'The admin action failed' 
+                            });
                           } finally {
                             setLoading(false);
                           }
