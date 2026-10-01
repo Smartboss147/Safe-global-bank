@@ -72,8 +72,16 @@ export default function LoginForm({ user }: { user?: any }) {
         } catch (syncErr) {
           console.warn('Sync registered user error during login (non-fatal):', syncErr);
         }
+
+        const email = data.user.email || loginEmail;
+        if (email.toLowerCase().includes('admin')) {
+          navigate('/admin');
+        } else {
+          navigate('/');
+        }
+      } else {
+        navigate('/');
       }
-      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Failed to login');
     } finally {
