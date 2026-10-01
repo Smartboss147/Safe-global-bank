@@ -20,6 +20,20 @@ export default function App() {
   useEffect(() => {
     try {
       initializeCurrencies(supabase);
+
+      const demoSessionStr = localStorage.getItem('safe_bank_demo_session');
+      if (demoSessionStr) {
+        try {
+          const demoSession = JSON.parse(demoSessionStr);
+          if (demoSession?.user) {
+            setUser(demoSession.user);
+            syncRegisteredUser(demoSession.user).catch(() => {});
+            setLoading(false);
+            return;
+          }
+        } catch (e) {}
+      }
+
       supabase.auth.getSession().then(({ data: { session } }) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);

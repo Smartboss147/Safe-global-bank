@@ -3,6 +3,7 @@ import { login, logout } from '../lib/auth';
 import { useNavigate } from 'react-router-dom';
 import { ShieldAlert, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { syncRegisteredUser } from '../utils/profile';
 
 export default function AdminLogin({ user }: { user?: any }) {
   const [email, setEmail] = useState('');
@@ -56,6 +57,12 @@ export default function AdminLogin({ user }: { user?: any }) {
       if (authError) throw authError;
       
       if (data?.user) {
+        try {
+          await syncRegisteredUser(data.user);
+        } catch (syncErr) {
+          console.warn('Sync registered user error during admin login (non-fatal):', syncErr);
+        }
+
         const isAdmin = await isUserAdmin(data.user.id, data.user.email);
         if (isAdmin) {
           navigate('/admin');

@@ -67,8 +67,13 @@ export default function LoginForm({ user }: { user?: any }) {
       const { data, error: authError } = await login(loginEmail, loginPassword);
       if (authError) throw authError;
       if (data?.user) {
-        await syncRegisteredUser(data.user);
+        try {
+          await syncRegisteredUser(data.user);
+        } catch (syncErr) {
+          console.warn('Sync registered user error during login (non-fatal):', syncErr);
+        }
       }
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'Failed to login');
     } finally {
