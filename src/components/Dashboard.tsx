@@ -30,6 +30,7 @@ export default function Dashboard({ user }: { user: any }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState<any>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
+  const [tradingBalance, setTradingBalance] = useState<number>(0);
   const [userData, setUserData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [showBalance, setShowBalance] = useState(true);
@@ -92,6 +93,16 @@ export default function Dashboard({ user }: { user: any }) {
       console.log('[Dashboard] Fresh account data from Supabase:', accData[0]);
       setAccountId(accData[0].id);
       setAccount(accData[0]);
+    }
+
+    // Fetch crypto_wallets for trading balance so overview total balance matches trading balance
+    const { data: walletData } = await supabase.from('crypto_wallets').select('*').eq('user_id', user.id).maybeSingle();
+    if (walletData && walletData.trading_balance !== undefined && walletData.trading_balance !== null) {
+      setTradingBalance(Number(walletData.trading_balance));
+    } else if (accData && accData.length > 0) {
+      setTradingBalance(Number(accData[0].balance || 10000));
+    } else {
+      setTradingBalance(10000);
     }
     
     // Fetch fresh user profile info directly from Supabase
@@ -174,7 +185,7 @@ export default function Dashboard({ user }: { user: any }) {
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
-        return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
+        return <HomeView account={account} accountId={accountId} tradingBalance={tradingBalance} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
       case 'transfers': return <div className="p-4"><Transfers user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'crypto': return <div className="p-4"><CryptoWallet user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'trading': return <div className="p-4"><TradingPlatform user={user} account={account} /></div>;
@@ -387,11 +398,12 @@ export default function Dashboard({ user }: { user: any }) {
   );
 }
 
-function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
+function HomeView({ account, accountId, tradingBalance, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
   const accNum = account?.account_number || account?.accountNumber || '';
   const fullName = getUserDisplayName(userData, user);
   const avatarSrc = getUserPhotoURL(userData, user);
   const accountStatus = account?.status || 'active';
+  const displayBalance = tradingBalance > 0 ? tradingBalance : (account?.balance || 10000);
 
   return (
     <div className="px-4 pb-6 space-y-6">
@@ -425,7 +437,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
             </button>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">
-            {showBalance ? formatCurrencyAmount(account?.balance, account?.currency_code || account?.currency || userData?.currency_code || userData?.currency || userData?.country, { includeCode: true }) : '••••••••'}
+            {showBalance ? formatCurrencyAmount(displayBalance, account?.currency_code || account?.currency || userData?.currency_code || userData?.currency || userData?.country, { includeCode: true }) : '••••••••'}
           </h1>
         </div>
 

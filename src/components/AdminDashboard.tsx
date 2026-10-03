@@ -173,7 +173,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     require2FA: false,
     defaultCurrency: 'USD'
   });
-  const [smartsuppKey, setSmartsuppKey] = useState(() => localStorage.getItem('smartsupp_key') || '');
+  const [smartsuppKey, setSmartsuppKey] = useState(() => localStorage.getItem('smartsupp_key') || '7d57842cdad4ea0fb74cdb6aa4d7b6f84d0a087b');
   const [supportedCountries, setSupportedCountries] = useState<any[]>([]);
 
   const navigate = useNavigate();

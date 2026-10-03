@@ -20,6 +20,9 @@ export default function App() {
 
   useEffect(() => {
     try {
+      if (!localStorage.getItem('smartsupp_key')) {
+        localStorage.setItem('smartsupp_key', '7d57842cdad4ea0fb74cdb6aa4d7b6f84d0a087b');
+      }
       initializeCurrencies(supabase);
 
       const demoSessionStr = localStorage.getItem('safe_bank_demo_session');
