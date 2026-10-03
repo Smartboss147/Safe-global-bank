@@ -3,6 +3,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import nodemailer from "nodemailer";
+import { Pool } from 'pg';
 
 async function startServer() {
   const app = express();
@@ -1528,11 +1529,11 @@ app.get('/api/trading/dashboard', async (req, res) => {
 
     if (!userId) {
       return res.json({
-        balance: 10000,
+        balance: 0,
         profit: 0,
         deposited: 0,
         invested: 0,
-        accounts: [{ balance: 10000, currency: 'USD' }],
+        accounts: [{ balance: 0, currency: 'USD' }],
         recentTransactions: [],
         positions: [],
         recentTrades: []
@@ -1556,29 +1557,29 @@ app.get('/api/trading/dashboard', async (req, res) => {
       console.warn('Accounts fetch exception:', err);
     }
 
-    // Fetch trading wallet balance if exists to match crypto trading balance
+    // Fetch real trading balance strictly from crypto_wallets (crypto trading page) first
     let tradingWalletBalance = null;
     try {
-      const { data: tradingWallet } = await supabaseAdmin
-        .from('wallets')
-        .select('balance')
+      const { data: cryptoWallet } = await supabaseAdmin
+        .from('crypto_wallets')
+        .select('trading_balance')
         .eq('user_id', userId)
-        .eq('wallet_type', 'trading')
         .maybeSingle();
-      if (tradingWallet && tradingWallet.balance !== undefined) {
-        tradingWalletBalance = Number(tradingWallet.balance);
+      if (cryptoWallet && cryptoWallet.trading_balance !== undefined && cryptoWallet.trading_balance !== null) {
+        tradingWalletBalance = Number(cryptoWallet.trading_balance);
       }
     } catch (e) {}
 
     if (tradingWalletBalance === null) {
       try {
-        const { data: cryptoWallet } = await supabaseAdmin
-          .from('crypto_wallets')
-          .select('trading_balance')
+        const { data: tradingWallet } = await supabaseAdmin
+          .from('wallets')
+          .select('balance')
           .eq('user_id', userId)
+          .eq('wallet_type', 'trading')
           .maybeSingle();
-        if (cryptoWallet && cryptoWallet.trading_balance !== undefined) {
-          tradingWalletBalance = Number(cryptoWallet.trading_balance);
+        if (tradingWallet && tradingWallet.balance !== undefined && tradingWallet.balance !== null) {
+          tradingWalletBalance = Number(tradingWallet.balance);
         }
       } catch (e) {}
     }
@@ -1590,14 +1591,14 @@ app.get('/api/trading/dashboard', async (req, res) => {
           .select('balance')
           .eq('user_id', userId)
           .maybeSingle();
-        if (tradingAcc && tradingAcc.balance !== undefined) {
+        if (tradingAcc && tradingAcc.balance !== undefined && tradingAcc.balance !== null) {
           tradingWalletBalance = Number(tradingAcc.balance);
         }
       } catch (e) {}
     }
 
-    const mainAccount = accounts?.[0] || { balance: 10000, currency: 'USD' };
-    const balance = tradingWalletBalance !== null ? tradingWalletBalance : (Number(mainAccount.balance) || 10000);
+    const mainAccount = accounts?.[0] || { balance: 0, currency: 'USD' };
+    const balance = tradingWalletBalance !== null ? tradingWalletBalance : (Number(mainAccount.balance) || 0);
 
     // Fetch positions with robust error handling
     let positions: any[] = [];
@@ -1654,11 +1655,11 @@ app.get('/api/trading/dashboard', async (req, res) => {
   } catch (e: any) {
     console.error('Trading dashboard error:', e);
     res.json({
-      balance: 10000,
+      balance: 0,
       profit: 0,
       deposited: 0,
       invested: 0,
-      accounts: [{ balance: 10000, currency: 'USD' }],
+      accounts: [{ balance: 0, currency: 'USD' }],
       recentTransactions: [],
       positions: [],
       recentTrades: []
@@ -1808,6 +1809,41 @@ app.post('/api/admin/execute-sql', verifyAdmin, async (req, res) => {
   } catch (err: any) {
     console.error('Execute SQL error:', err);
     res.status(500).json({ error: err.message || 'Failed to execute SQL query' });
+  }
+});
+
+// API endpoint to bootstrap / create all Supabase tables automatically
+app.post('/api/admin/bootstrap-schema', verifyAdmin, async (req, res) => {
+  const { connectionString: customConnStr } = req.body;
+  try {
+    const connectionString = customConnStr || process.env.DATABASE_URL || process.env.SUPABASE_DB_URL;
+    if (!connectionString) {
+      return res.status(400).json({ 
+        error: 'Database Connection URL (DATABASE_URL) is required. You can find your connection string in Supabase Dashboard -> Project Settings -> Database -> Connection string (URI).' 
+      });
+    }
+
+    const pool = new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+    const client = await pool.connect();
+    
+    const fs = await import('fs');
+    const path = await import('path');
+    const schemaSqlPath = path.join(process.cwd(), 'supabase', 'migrations', 'full_schema_setup.sql');
+    
+    if (fs.existsSync(schemaSqlPath)) {
+      const sqlContent = fs.readFileSync(schemaSqlPath, 'utf8');
+      await client.query(sqlContent);
+      client.release();
+      await pool.end();
+      return res.json({ success: true, message: 'All Supabase tables and schema successfully created and synced!' });
+    } else {
+      client.release();
+      await pool.end();
+      return res.status(404).json({ error: 'full_schema_setup.sql file not found' });
+    }
+  } catch (err: any) {
+    console.error('Bootstrap schema error:', err);
+    res.status(500).json({ error: err.message || 'Failed to bootstrap schema' });
   }
 });
 

@@ -65,6 +65,34 @@ export default function AdminDashboard({ user }: { user: any }) {
       setSqlLoading(false);
     }
   };
+
+  const [dbConnString, setDbConnString] = useState('');
+  const [bootstrapLoading, setBootstrapLoading] = useState(false);
+  const [bootstrapMsg, setBootstrapMsg] = useState<{ success?: boolean; text?: string } | null>(null);
+
+  const handleBootstrapSchema = async () => {
+    setBootstrapLoading(true);
+    setBootstrapMsg(null);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const res = await fetch('/api/admin/bootstrap-schema', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ connectionString: dbConnString })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to bootstrap schema');
+      setBootstrapMsg({ success: true, text: data.message || 'All Supabase tables created and synchronized successfully!' });
+    } catch (err: any) {
+      setBootstrapMsg({ success: false, text: err.message });
+    } finally {
+      setBootstrapLoading(false);
+    }
+  };
   
   // Modals & States
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -2223,6 +2251,44 @@ export default function AdminDashboard({ user }: { user: any }) {
                   Accounts
                 </button>
               </div>
+            </div>
+
+            {/* Auto-Bootstrap Schema Card (Fixes "No tables created yet" in Supabase) */}
+            <div className="p-5 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/20 rounded-2xl space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h4 className="font-bold text-amber-400 text-sm flex items-center gap-2">
+                    <Zap size={16} />
+                    Auto-Create All Supabase Tables & Schema
+                  </h4>
+                  <p className="text-xs text-gray-300 mt-1">
+                    If Supabase shows "No tables created yet", enter your Supabase Database Connection URI below and click Auto-Create to instantly provision all tables (`profiles`, `accounts`, `wallets`, `transactions`, `kyc_documents`, etc.).
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex flex-col md:flex-row gap-3">
+                <input
+                  type="text"
+                  value={dbConnString}
+                  onChange={(e) => setDbConnString(e.target.value)}
+                  placeholder="postgresql://postgres:[PASSWORD]@db.[PROJECT_REF].supabase.co:5432/postgres"
+                  className="flex-1 p-3 bg-[#181a22] border border-white/10 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-amber-500"
+                />
+                <button
+                  onClick={handleBootstrapSchema}
+                  disabled={bootstrapLoading}
+                  className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition flex items-center justify-center gap-2 whitespace-nowrap disabled:opacity-50"
+                >
+                  {bootstrapLoading ? 'Creating Tables...' : '⚡ Auto-Create Tables'}
+                </button>
+              </div>
+
+              {bootstrapMsg && (
+                <div className={`p-3 rounded-xl text-xs font-mono ${bootstrapMsg.success ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'}`}>
+                  {bootstrapMsg.text}
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">
