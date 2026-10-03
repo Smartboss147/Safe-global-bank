@@ -8,13 +8,27 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const SUPPORTED_COINS = [
-  { symbol: 'BTC', name: 'Bitcoin', price: 64200.50, networks: ['Bitcoin (BTC)', 'BNB Smart Chain (BEP20)'] },
-  { symbol: 'ETH', name: 'Ethereum', price: 3450.20, networks: ['Ethereum (ERC20)', 'Arbitrum One', 'Optimism', 'Base'] },
-  { symbol: 'USDT', name: 'TetherUS', price: 1.00, networks: ['Tron (TRC20)', 'Ethereum (ERC20)', 'BNB Smart Chain (BEP20)'] },
-  { symbol: 'BNB', name: 'BNB', price: 580.40, networks: ['BNB Smart Chain (BEP20)'] },
-  { symbol: 'SOL', name: 'Solana', price: 145.30, networks: ['Solana'] },
-  { symbol: 'XRP', name: 'XRP', price: 0.60, networks: ['Ripple'] },
-  { symbol: 'LTC', name: 'Litecoin', price: 82.50, networks: ['Litecoin'] }
+  { 
+    symbol: 'BTC', 
+    name: 'Bitcoin', 
+    price: 64200.50, 
+    networks: ['Bitcoin (BTC)'], 
+    address: 'bc1q857hst5jn9mtq4dj67qfq4zh04ruwes40lgd7t' 
+  },
+  { 
+    symbol: 'ETH', 
+    name: 'Ethereum', 
+    price: 3450.20, 
+    networks: ['Ethereum (ERC20)'], 
+    address: '0x6aEC6e8AedC600B8EA25577748a513E6CDA850F3' 
+  },
+  { 
+    symbol: 'USDT', 
+    name: 'TetherUS', 
+    price: 1.00, 
+    networks: ['Ethereum (ERC20)'], 
+    address: '0x6aEC6e8AedC600B8EA25577748a513E6CDA850F3' 
+  }
 ];
 
 const createDefaultWallet = (userId: string) => {
@@ -273,8 +287,9 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
   }, [user?.id]);
 
   const handleCopyAddress = () => {
-    if (!wallet?.address) return;
-    navigator.clipboard.writeText(wallet.address);
+    const addr = selectedReceiveAsset?.address || wallet?.address;
+    if (!addr) return;
+    navigator.clipboard.writeText(addr);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -1053,7 +1068,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
               <div>
                 <p className="text-xs text-gray-500 mb-2 font-medium">Your {selectedReceiveAsset.symbol} Deposit Address</p>
                 <div className="flex items-center justify-between gap-2 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
-                  <p className="font-mono text-xs font-semibold truncate text-slate-800 select-all">{wallet?.address || 'Loading...'}</p>
+                  <p className="font-mono text-xs font-semibold truncate text-slate-800 select-all">{selectedReceiveAsset?.address || wallet?.address || 'Loading...'}</p>
                   <button 
                     onClick={handleCopyAddress} 
                     className="text-slate-500 hover:text-blue-600 transition p-1.5 hover:bg-gray-100 rounded-lg flex items-center gap-1 shrink-0"
