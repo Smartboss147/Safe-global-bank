@@ -1556,8 +1556,48 @@ app.get('/api/trading/dashboard', async (req, res) => {
       console.warn('Accounts fetch exception:', err);
     }
 
+    // Fetch trading wallet balance if exists to match crypto trading balance
+    let tradingWalletBalance = null;
+    try {
+      const { data: tradingWallet } = await supabaseAdmin
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', userId)
+        .eq('wallet_type', 'trading')
+        .maybeSingle();
+      if (tradingWallet && tradingWallet.balance !== undefined) {
+        tradingWalletBalance = Number(tradingWallet.balance);
+      }
+    } catch (e) {}
+
+    if (tradingWalletBalance === null) {
+      try {
+        const { data: cryptoWallet } = await supabaseAdmin
+          .from('crypto_wallets')
+          .select('trading_balance')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (cryptoWallet && cryptoWallet.trading_balance !== undefined) {
+          tradingWalletBalance = Number(cryptoWallet.trading_balance);
+        }
+      } catch (e) {}
+    }
+
+    if (tradingWalletBalance === null) {
+      try {
+        const { data: tradingAcc } = await supabaseAdmin
+          .from('trading_accounts')
+          .select('balance')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (tradingAcc && tradingAcc.balance !== undefined) {
+          tradingWalletBalance = Number(tradingAcc.balance);
+        }
+      } catch (e) {}
+    }
+
     const mainAccount = accounts?.[0] || { balance: 10000, currency: 'USD' };
-    const balance = Number(mainAccount.balance) || 10000;
+    const balance = tradingWalletBalance !== null ? tradingWalletBalance : (Number(mainAccount.balance) || 10000);
 
     // Fetch positions with robust error handling
     let positions: any[] = [];
