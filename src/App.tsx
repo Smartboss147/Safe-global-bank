@@ -11,6 +11,7 @@ import { syncRegisteredUser } from './utils/profile';
 import { initializeCurrencies } from './utils/currency';
 import { ThemeProvider } from './context/ThemeContext';
 import ThemeToggle from './components/ThemeToggle';
+import LiveChatWidget from './components/LiveChatWidget';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -108,6 +109,7 @@ export default function App() {
               <Route path="/login" element={<LoginForm user={user} />} />
             </Routes>
           </main>
+          <LiveChatWidget />
         </div>
       </Router>
     </ThemeProvider>

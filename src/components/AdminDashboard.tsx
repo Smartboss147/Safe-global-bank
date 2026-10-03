@@ -173,6 +173,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     require2FA: false,
     defaultCurrency: 'USD'
   });
+  const [smartsuppKey, setSmartsuppKey] = useState(() => localStorage.getItem('smartsupp_key') || '');
   const [supportedCountries, setSupportedCountries] = useState<any[]>([]);
 
   const navigate = useNavigate();
@@ -2405,6 +2406,36 @@ export default function AdminDashboard({ user }: { user: any }) {
                 >
                   {systemSettings.registrationEnabled ? 'ENABLED' : 'DISABLED'}
                 </button>
+              </div>
+
+              <div className="p-4 bg-[#181a22] border border-white/5 rounded-2xl space-y-3">
+                <div>
+                  <p className="font-bold text-white flex items-center gap-2">
+                    💬 Smartsupp Live Chat Integration
+                  </p>
+                  <p className="text-gray-400 text-[11px] mt-0.5">
+                    Enter your Smartsupp Chat Key (from app.smartsupp.com) to receive all visitor messages directly on your Smartsupp admin panel.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={smartsuppKey}
+                    onChange={e => setSmartsuppKey(e.target.value)}
+                    placeholder="Enter Smartsupp Key (e.g. abc123xyz)"
+                    className="flex-1 p-3 bg-[#121319] border border-white/10 rounded-xl text-white font-mono text-xs"
+                  />
+                  <button
+                    onClick={() => {
+                      localStorage.setItem('smartsupp_key', smartsuppKey.trim());
+                      setMsg({ type: 'success', text: 'Smartsupp Live Chat key saved successfully! Live chat is now connected to your Smartsupp account.' });
+                      logAuditAction('SMARTSUPP_KEY_UPDATED', 'SYSTEM', 'Updated Smartsupp live chat key');
+                    }}
+                    className="px-4 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition"
+                  >
+                    Connect
+                  </button>
+                </div>
               </div>
 
               <button 
