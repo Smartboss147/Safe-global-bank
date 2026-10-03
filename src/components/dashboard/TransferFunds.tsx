@@ -14,7 +14,10 @@ import {
   ShieldCheck, 
   DollarSign,
   UserCheck,
-  RefreshCw
+  RefreshCw,
+  Lock,
+  Key,
+  ChevronLeft
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -43,6 +46,14 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
   const [message, setMessage] = useState('');
   const [receiptData, setReceiptData] = useState<any>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // 3-Step Security Code Verification states (IMF -> IBAN -> SWIFT)
+  const [verificationStep, setVerificationStep] = useState<1 | 2 | 3>(1);
+  const [imfCodeInput, setImfCodeInput] = useState('');
+  const [ibanCodeInput, setIbanCodeInput] = useState('');
+  const [swiftCodeInput, setSwiftCodeInput] = useState('');
+  const [codeError, setCodeError] = useState('');
+  const [verifyingCode, setVerifyingCode] = useState(false);
 
   const availableBalance = Number(account?.balance || 0);
   const userCurr = account?.currency_code || account?.currency || user?.currency_code || user?.currency || user?.country || 'USD';
@@ -85,7 +96,57 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
       return;
     }
 
+    // Launch 3-step security verification starting at Step 1 (IMF Code)
+    setVerificationStep(1);
+    setImfCodeInput('');
+    setIbanCodeInput('');
+    setSwiftCodeInput('');
+    setCodeError('');
     setShowConfirmModal(true);
+  };
+
+  const handleVerifyStep1 = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCodeError('');
+    if (imfCodeInput.trim() !== '144862') {
+      setCodeError('Invalid IMF Code. Please enter the correct IMF clearance code (144862).');
+      return;
+    }
+    setVerifyingCode(true);
+    setTimeout(() => {
+      setVerifyingCode(false);
+      setVerificationStep(2);
+      setCodeError('');
+    }, 350);
+  };
+
+  const handleVerifyStep2 = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCodeError('');
+    if (ibanCodeInput.trim() !== '177863') {
+      setCodeError('Invalid IBAN Code. Please enter the correct IBAN verification code (177863).');
+      return;
+    }
+    setVerifyingCode(true);
+    setTimeout(() => {
+      setVerifyingCode(false);
+      setVerificationStep(3);
+      setCodeError('');
+    }, 350);
+  };
+
+  const handleVerifyStep3 = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCodeError('');
+    if (swiftCodeInput.trim() !== '122865') {
+      setCodeError('Invalid SWIFT Code. Please enter the correct SWIFT settlement code (122865).');
+      return;
+    }
+    setVerifyingCode(true);
+    setTimeout(() => {
+      setVerifyingCode(false);
+      processTransfer();
+    }, 350);
   };
 
   const processTransfer = async () => {
@@ -575,54 +636,276 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
       </form>
       )}
 
-      {/* Confirmation Modal */}
+      {/* 3-Step Security Code Verification Modal (IMF -> IBAN -> SWIFT) */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-lg font-black text-gray-900">Confirm Transfer Details</h3>
-              <button onClick={() => setShowConfirmModal(false)} className="text-gray-400 hover:text-gray-600 font-bold">✕</button>
-            </div>
-
-            <div className="space-y-3 text-sm">
-              <div className="p-4 bg-gray-50 rounded-2xl space-y-2 border border-gray-100">
-                <div className="flex justify-between">
-                  <span className="text-gray-500 font-medium">Recipient</span>
-                  <span className="font-bold text-gray-900 truncate max-w-[180px]">{recipient}</span>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] max-w-md w-full p-6 sm:p-7 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 border border-gray-100">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-[#0A3D36] flex items-center justify-center border border-emerald-100 shadow-xs">
+                  <ShieldCheck size={22} />
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 font-medium">Transfer Method</span>
-                  <span className="font-bold text-gray-900 capitalize">{transferType}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500 font-medium">Transfer Fee</span>
-                  <span className="font-bold text-emerald-600">$0.00 (Waived)</span>
-                </div>
-                <div className="flex justify-between border-t border-gray-200 pt-2 text-base">
-                  <span className="font-bold text-gray-900">Total Deduction</span>
-                  <span className="font-black text-[#0A3D36]">{formatCurrencyAmount(amount || 0, currInfo)}</span>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-gray-900 tracking-tight">Security Clearance</h3>
+                  <p className="text-[11px] text-gray-500 font-semibold">Tier-1 Ledger Clearance Authorization</p>
                 </div>
               </div>
-
-              <p className="text-xs text-gray-500 leading-relaxed">
-                By confirming, you authorize Safe Global Trade to deduct <span className="font-bold text-gray-800">{formatCurrencyAmount(amount || 0, currInfo)}</span> from your account and process the funds to <span className="font-bold text-gray-800">{recipient}</span>.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 pt-2">
-              <button
-                onClick={() => setShowConfirmModal(false)}
-                className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-sm transition"
+              <button 
+                onClick={() => setShowConfirmModal(false)} 
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-800 flex items-center justify-center font-bold transition text-xs"
               >
-                Cancel
-              </button>
-              <button
-                onClick={processTransfer}
-                className="py-3 bg-[#0A3D36] hover:bg-[#072a25] text-white font-bold rounded-xl text-sm shadow-md transition"
-              >
-                Authorize & Send
+                ✕
               </button>
             </div>
+
+            {/* Stepper Progress Indicator */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center text-xs font-bold">
+                <span className="text-[#0A3D36]">Step {verificationStep} of 3</span>
+                <span className="text-gray-500 text-[11px]">
+                  {verificationStep === 1 && 'IMF Clearance Code'}
+                  {verificationStep === 2 && 'IBAN Verification Code'}
+                  {verificationStep === 3 && 'SWIFT Settlement Code'}
+                </span>
+              </div>
+              {/* Progress Bar */}
+              <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-[#0A3D36] to-emerald-500 transition-all duration-300"
+                  style={{ width: `${(verificationStep / 3) * 100}%` }}
+                />
+              </div>
+
+              {/* Step Pills */}
+              <div className="grid grid-cols-3 gap-1.5 pt-1 text-center text-[10px] sm:text-[11px] font-bold">
+                <div className={`p-2 rounded-xl border transition ${
+                  verificationStep === 1 
+                    ? 'bg-[#0A3D36] text-white border-[#0A3D36] shadow-xs' 
+                    : verificationStep > 1 
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                      : 'bg-gray-50 text-gray-400 border-gray-100'
+                }`}>
+                  {verificationStep > 1 ? '✓ 1. IMF' : '1. IMF Code'}
+                </div>
+                <div className={`p-2 rounded-xl border transition ${
+                  verificationStep === 2 
+                    ? 'bg-[#0A3D36] text-white border-[#0A3D36] shadow-xs' 
+                    : verificationStep > 2 
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-200' 
+                      : 'bg-gray-50 text-gray-400 border-gray-100'
+                }`}>
+                  {verificationStep > 2 ? '✓ 2. IBAN' : '2. IBAN Code'}
+                </div>
+                <div className={`p-2 rounded-xl border transition ${
+                  verificationStep === 3 
+                    ? 'bg-[#0A3D36] text-white border-[#0A3D36] shadow-xs' 
+                    : 'bg-gray-50 text-gray-400 border-gray-100'
+                }`}>
+                  3. SWIFT Code
+                </div>
+              </div>
+            </div>
+
+            {/* Transfer Summary Pill */}
+            <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between text-xs">
+              <div>
+                <span className="text-gray-400 text-[10px] uppercase font-bold block">Transfer Amount</span>
+                <span className="font-black text-gray-900 text-sm font-mono">{formatCurrencyAmount(amount || 0, currInfo)}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-gray-400 text-[10px] uppercase font-bold block">Recipient Destination</span>
+                <span className="font-bold text-gray-800 truncate max-w-[160px] inline-block font-mono">{recipient}</span>
+              </div>
+            </div>
+
+            {/* Error banner */}
+            {codeError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-rose-700 text-xs font-semibold animate-in fade-in">
+                <AlertCircle size={16} className="shrink-0" />
+                <span>{codeError}</span>
+              </div>
+            )}
+
+            {/* STEP 1: IMF Code (144862) */}
+            {verificationStep === 1 && (
+              <form onSubmit={handleVerifyStep1} className="space-y-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Enter IMF Code
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                      Required: 144862
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 font-medium">
+                    Provide the International Monetary Fund (IMF) transfer clearance code to authenticate international wire compliance.
+                  </p>
+                  <div className="relative mt-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      autoFocus
+                      maxLength={12}
+                      placeholder="144862"
+                      value={imfCodeInput}
+                      onChange={e => setImfCodeInput(e.target.value)}
+                      className="w-full text-center py-3 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-xl font-black font-mono tracking-widest text-gray-900 focus:ring-2 focus:ring-[#0A3D36] focus:bg-white outline-none shadow-inner"
+                    />
+                    <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmModal(false)}
+                    className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={verifyingCode || !imfCodeInput.trim()}
+                    className="py-3 bg-[#0A3D36] hover:bg-[#072a25] disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-md transition flex items-center justify-center gap-1.5"
+                  >
+                    {verifyingCode ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" /> Verifying...
+                      </>
+                    ) : (
+                      <>
+                        Proceed to Step 2 <ArrowRight size={14} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 2: IBAN Code (177863) */}
+            {verificationStep === 2 && (
+              <form onSubmit={handleVerifyStep2} className="space-y-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Enter IBAN Code
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                      Required: 177863
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 font-medium">
+                    IMF clearance approved. Enter your 6-digit International Bank Account Number (IBAN) verification code.
+                  </p>
+                  <div className="relative mt-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      autoFocus
+                      maxLength={12}
+                      placeholder="177863"
+                      value={ibanCodeInput}
+                      onChange={e => setIbanCodeInput(e.target.value)}
+                      className="w-full text-center py-3 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-xl font-black font-mono tracking-widest text-gray-900 focus:ring-2 focus:ring-[#0A3D36] focus:bg-white outline-none shadow-inner"
+                    />
+                    <Key className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerificationStep(1);
+                      setCodeError('');
+                    }}
+                    className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1"
+                  >
+                    <ChevronLeft size={14} /> Back to Step 1
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={verifyingCode || !ibanCodeInput.trim()}
+                    className="py-3 bg-[#0A3D36] hover:bg-[#072a25] disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-md transition flex items-center justify-center gap-1.5"
+                  >
+                    {verifyingCode ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" /> Verifying...
+                      </>
+                    ) : (
+                      <>
+                        Proceed to Step 3 <ArrowRight size={14} />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {/* STEP 3: SWIFT Code (122865) */}
+            {verificationStep === 3 && (
+              <form onSubmit={handleVerifyStep3} className="space-y-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
+                      Enter SWIFT Code
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                      Required: 122865
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 font-medium">
+                    IBAN routing confirmed. Enter your 6-digit SWIFT settlement clearance code to authorize ledger dispatch.
+                  </p>
+                  <div className="relative mt-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      required
+                      autoFocus
+                      maxLength={12}
+                      placeholder="122865"
+                      value={swiftCodeInput}
+                      onChange={e => setSwiftCodeInput(e.target.value)}
+                      className="w-full text-center py-3 px-4 bg-gray-50 border border-gray-200 rounded-2xl text-xl font-black font-mono tracking-widest text-gray-900 focus:ring-2 focus:ring-[#0A3D36] focus:bg-white outline-none shadow-inner"
+                    />
+                    <ShieldCheck className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVerificationStep(2);
+                      setCodeError('');
+                    }}
+                    className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition flex items-center justify-center gap-1"
+                  >
+                    <ChevronLeft size={14} /> Back to Step 2
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={verifyingCode || !swiftCodeInput.trim() || loading}
+                    className="py-3 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs shadow-md transition flex items-center justify-center gap-1.5"
+                  >
+                    {verifyingCode || loading ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" /> Finalizing...
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={16} /> Finalize Transfer
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
