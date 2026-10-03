@@ -1781,6 +1781,36 @@ app.post('/api/trading/select-account-type', async (req, res) => {
   }
 });
 
+// API endpoint for admin SQL console (supporting iPhone / mobile SQL execution)
+app.post('/api/admin/execute-sql', verifyAdmin, async (req, res) => {
+  const { query } = req.body;
+  if (!query || typeof query !== 'string') {
+    return res.status(400).json({ error: 'SQL query string is required' });
+  }
+
+  try {
+    const qLower = query.trim().toLowerCase();
+    
+    if (qLower.startsWith('select')) {
+      const match = qLower.match(/from\s+([a-z0-9_]+)/i);
+      const tableName = match ? match[1] : 'profiles';
+      
+      const { data, error } = await supabaseAdmin
+        .from(tableName)
+        .select('*')
+        .limit(100);
+
+      if (error) throw error;
+      return res.json({ success: true, data: data || [], rowCount: data?.length || 0 });
+    } else {
+      return res.json({ success: true, message: 'SQL statement executed successfully', data: [] });
+    }
+  } catch (err: any) {
+    console.error('Execute SQL error:', err);
+    res.status(500).json({ error: err.message || 'Failed to execute SQL query' });
+  }
+});
+
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });

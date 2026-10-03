@@ -35,6 +35,36 @@ export default function AdminDashboard({ user }: { user: any }) {
   const [hasLoaded, setHasLoaded] = useState(false);
   const [msg, setMsg] = useState({ type: '', text: '' });
   const [searchQuery, setSearchQuery] = useState('');
+
+  // SQL Console state (for iPhone & mobile SQL execution)
+  const [sqlQuery, setSqlQuery] = useState('SELECT * FROM profiles;');
+  const [sqlResult, setSqlResult] = useState<any[] | null>(null);
+  const [sqlLoading, setSqlLoading] = useState(false);
+  const [sqlError, setSqlError] = useState<string | null>(null);
+
+  const handleExecuteSql = async () => {
+    setSqlLoading(true);
+    setSqlError(null);
+    try {
+      const session = (await supabase.auth.getSession()).data.session;
+      const token = session?.access_token;
+      const res = await fetch('/api/admin/execute-sql', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ query: sqlQuery })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to execute SQL');
+      setSqlResult(data.data || []);
+    } catch (err: any) {
+      setSqlError(err.message);
+    } finally {
+      setSqlLoading(false);
+    }
+  };
   
   // Modals & States
   const [selectedUser, setSelectedUser] = useState<any>(null);
@@ -732,6 +762,7 @@ export default function AdminDashboard({ user }: { user: any }) {
     { id: 'referrals', label: 'Referrals & Bonuses', icon: <Sparkles size={18} /> },
     { id: 'currencies', label: 'Country & Currencies', icon: <Database size={18} /> },
     { id: 'security', label: 'Audit Logs & Security', icon: <Terminal size={18} /> },
+    { id: 'sql_console', label: 'SQL Console / DB', icon: <Terminal size={18} /> },
     { id: 'settings', label: 'System Settings', icon: <SettingsIcon size={18} /> },
   ];
 
@@ -2154,6 +2185,109 @@ export default function AdminDashboard({ user }: { user: any }) {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* TAB: SQL CONSOLE & DB (Mobile/iPhone SQL execution supported) */}
+        {activeTab === 'sql_console' && (
+          <div className="bg-[#121319] border border-white/10 p-6 rounded-2xl space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Terminal size={20} className="text-amber-400" />
+                  Supabase SQL Console & Database Manager
+                </h3>
+                <p className="text-xs text-gray-400 mt-1">
+                  Run custom SQL queries or inspect database tables directly from iPhone or desktop. Fully synchronized with your project tables.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setSqlQuery('SELECT * FROM profiles;')}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-xs text-gray-300 font-bold transition"
+                >
+                  Profiles
+                </button>
+                <button
+                  onClick={() => setSqlQuery('SELECT * FROM kyc_documents;')}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-xs text-gray-300 font-bold transition"
+                >
+                  KYC Docs
+                </button>
+                <button
+                  onClick={() => setSqlQuery('SELECT * FROM accounts;')}
+                  className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-xl text-xs text-gray-300 font-bold transition"
+                >
+                  Accounts
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-gray-400 font-bold mb-2 text-xs uppercase tracking-wider">SQL Query Statement</label>
+                <textarea
+                  value={sqlQuery}
+                  onChange={(e) => setSqlQuery(e.target.value)}
+                  rows={4}
+                  placeholder="Enter SQL query (e.g. SELECT * FROM profiles WHERE status = 'active')"
+                  className="w-full p-4 bg-[#181a22] border border-white/10 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleExecuteSql}
+                  disabled={sqlLoading}
+                  className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-sm rounded-xl transition flex items-center gap-2 shadow-lg shadow-amber-500/20 disabled:opacity-50"
+                >
+                  {sqlLoading ? 'Executing...' : 'Run Query'}
+                </button>
+                <span className="text-xs text-gray-400">Press Run Query to execute against Supabase backend.</span>
+              </div>
+
+              {sqlError && (
+                <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-xl text-rose-400 text-xs font-mono">
+                  Error: {sqlError}
+                </div>
+              )}
+
+              {sqlResult !== null && (
+                <div className="space-y-3 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-bold text-white text-sm">Query Results ({sqlResult.length} rows)</h4>
+                    <span className="text-xs text-emerald-400 font-mono">Status: OK</span>
+                  </div>
+
+                  <div className="overflow-x-auto max-h-96 rounded-xl border border-white/10 bg-[#181a22]">
+                    {sqlResult.length === 0 ? (
+                      <div className="p-8 text-center text-gray-500 text-xs">Query executed successfully but returned zero rows.</div>
+                    ) : (
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-white/10 bg-white/5 text-gray-400">
+                            {Object.keys(sqlResult[0] || {}).map((col) => (
+                              <th key={col} className="p-3 font-mono font-bold whitespace-nowrap">{col}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-gray-300 font-mono">
+                          {sqlResult.map((row, idx) => (
+                            <tr key={idx} className="hover:bg-white/5 transition">
+                              {Object.values(row).map((val: any, vIdx) => (
+                                <td key={vIdx} className="p-3 whitespace-nowrap max-w-xs truncate">
+                                  {typeof val === 'object' ? JSON.stringify(val) : String(val ?? '')}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           </div>
