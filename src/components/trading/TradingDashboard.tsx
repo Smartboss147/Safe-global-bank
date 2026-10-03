@@ -42,6 +42,25 @@ export default function TradingDashboard({ user, account, setActiveTab, isDarkMo
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;
 
+      // Fetch real trading balance strictly from crypto_wallets
+      let realTradingBalance = 0;
+      if (user?.id) {
+        const { data: cw } = await supabase.from('crypto_wallets').select('trading_balance').eq('user_id', user.id).maybeSingle();
+        if (cw && cw.trading_balance !== undefined && cw.trading_balance !== null) {
+          realTradingBalance = Number(cw.trading_balance);
+        } else {
+          const localW = localStorage.getItem(`crypto_wallet_${user.id}`);
+          if (localW) {
+            try {
+              const parsed = JSON.parse(localW);
+              if (parsed?.trading_balance !== undefined) {
+                realTradingBalance = Number(parsed.trading_balance);
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
       const [dashRes, advRes] = await Promise.all([
         fetch('/api/trading/dashboard', {
           headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -54,15 +73,18 @@ export default function TradingDashboard({ user, account, setActiveTab, isDarkMo
       if (dashRes.ok) {
         const dashJson = await dashRes.json().catch(() => null);
         if (dashJson) {
+          if (dashJson.balance === 10000 || dashJson.balance === undefined || dashJson.balance === null) {
+            dashJson.balance = realTradingBalance;
+          }
           setDashboardData(dashJson);
         }
       } else {
         setDashboardData({
-          balance: 10000,
+          balance: realTradingBalance,
           profit: 0,
           deposited: 0,
           invested: 0,
-          accounts: [{ balance: 10000, currency: 'USD' }],
+          accounts: [{ balance: realTradingBalance, currency: 'USD' }],
           recentTransactions: [],
           positions: [],
           recentTrades: []
@@ -76,13 +98,19 @@ export default function TradingDashboard({ user, account, setActiveTab, isDarkMo
       }
     } catch (err: any) {
       console.warn('Error fetching dashboard data (non-fatal):', err);
-      // Silently fallback without setting error banner
+      let realTradingBalance = 0;
+      if (user?.id) {
+        const { data: cw } = await supabase.from('crypto_wallets').select('trading_balance').eq('user_id', user.id).maybeSingle();
+        if (cw && cw.trading_balance !== undefined && cw.trading_balance !== null) {
+          realTradingBalance = Number(cw.trading_balance);
+        }
+      }
       setDashboardData({
-        balance: 10000,
+        balance: realTradingBalance,
         profit: 0,
         deposited: 0,
         invested: 0,
-        accounts: [{ balance: 10000, currency: 'USD' }],
+        accounts: [{ balance: realTradingBalance, currency: 'USD' }],
         recentTransactions: [],
         positions: [],
         recentTrades: []

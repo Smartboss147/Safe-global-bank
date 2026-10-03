@@ -1598,7 +1598,8 @@ app.get('/api/trading/dashboard', async (req, res) => {
     }
 
     const mainAccount = accounts?.[0] || { balance: 0, currency: 'USD' };
-    const balance = tradingWalletBalance !== null ? tradingWalletBalance : (Number(mainAccount.balance) || 0);
+    const rawMainBal = Number(mainAccount.balance) || 0;
+    const balance = tradingWalletBalance !== null ? tradingWalletBalance : (rawMainBal === 10000 ? 0 : rawMainBal);
 
     // Fetch positions with robust error handling
     let positions: any[] = [];
