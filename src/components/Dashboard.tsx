@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import { logout } from '../lib/auth';
 import { getUserDisplayName, getUserPhotoURL, loadUserProfile } from '../utils/profile';
 import { formatCurrencyAmount, getCurrencyInfo } from '../utils/currency';
 import { motion, AnimatePresence } from 'motion/react';
@@ -173,9 +174,11 @@ export default function Dashboard({ user }: { user: any }) {
     return 'Good Evening';
   };
 
-  const handleAction = (tab: string) => {
+  const handleAction = async (tab: string) => {
     if (tab === 'logout') {
-      supabase.auth.signOut();
+      setIsMenuOpen(false);
+      setIsProfileDropdownOpen(false);
+      await logout();
     } else {
       setActiveTab(tab);
       setIsMenuOpen(false);

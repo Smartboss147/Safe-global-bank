@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ShieldCheck, Bell, ChevronRight, Fingerprint, Lock, Smartphone, Camera, Save, X, AlertCircle, Upload, CheckCircle2 } from 'lucide-react';
+import { ShieldCheck, Bell, ChevronRight, Fingerprint, Lock, Smartphone, Camera, Save, X, AlertCircle, Upload, CheckCircle2, LogOut } from 'lucide-react';
 import KYCUpload from './KYCUpload';
 import { getUserDisplayName, getUserPhotoURL, compressImage, saveUserProfile } from '../../utils/profile';
+import { logout } from '../../lib/auth';
 
 export default function Settings({ user, userData, fetchAccount }: any) {
   const [notifications, setNotifications] = useState({ push: true, email: false, sms: true });
@@ -377,6 +378,18 @@ export default function Settings({ user, userData, fetchAccount }: any) {
                 </div>
              ))}
           </div>
+        </div>
+
+        {/* Account Actions */}
+        <div className="pt-2">
+          <button 
+            type="button"
+            onClick={async () => await logout()}
+            className="w-full flex items-center justify-center gap-2 p-4 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-2xl transition border border-red-100 shadow-xs"
+          >
+            <LogOut size={18} />
+            <span>Log Out of Account</span>
+          </button>
         </div>
 
       </div>

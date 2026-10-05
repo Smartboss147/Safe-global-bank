@@ -108,10 +108,29 @@ export const loginWithGoogle = async () => {
 };
 
 export const logout = async () => {
-  localStorage.removeItem('safe_bank_demo_session');
+  try {
+    localStorage.removeItem('safe_bank_demo_session');
+    // Also clear any cached supabase session keys in localStorage
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.includes('supabase.auth.token') || key.includes('auth-token'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => {
+      try { localStorage.removeItem(k); } catch (_) {}
+    });
+  } catch (e) {
+    console.error('Error clearing storage on logout:', e);
+  }
+
   try {
     await supabase.auth.signOut();
-  } catch (e) {}
+  } catch (e) {
+    console.warn('Supabase signOut warning:', e);
+  }
+
   if (typeof window !== 'undefined') {
     window.location.href = '/login';
   }

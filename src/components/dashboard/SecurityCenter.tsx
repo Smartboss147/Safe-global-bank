@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ShieldCheck, Smartphone, Key, History, AlertTriangle, Monitor, Lock } from 'lucide-react';
+import { logout } from '../../lib/auth';
 
 export default function SecurityCenter() {
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
@@ -78,11 +79,11 @@ export default function SecurityCenter() {
                     <p className="text-xs text-gray-500">{session.location} • {session.ip}</p>
                     <p className="text-xs text-green-600 font-medium mt-1">{session.time}</p>
                   </div>
-                  <button className="text-xs text-red-600 font-medium hover:underline">Log Out</button>
+                  <button onClick={async () => await logout()} className="text-xs text-red-600 font-medium hover:underline">Log Out</button>
                 </div>
               ))}
             </div>
-            <button className="w-full mt-4 p-2 text-sm text-center text-blue-600 font-semibold hover:bg-blue-50 rounded-lg transition">
+            <button onClick={async () => await logout()} className="w-full mt-4 p-2 text-sm text-center text-blue-600 font-semibold hover:bg-blue-50 rounded-lg transition">
               Log out of all other devices
             </button>
           </div>
