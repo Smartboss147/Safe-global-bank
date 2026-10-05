@@ -36,7 +36,7 @@ const MARKETS = [
   { symbol: 'AAPL', name: 'Apple Inc.', type: 'Stock', price: 185.92, change: 1.2 }
 ];
 
-export default function Investments({ user }: any) {
+export default function Investments({ user, account, fetchAccount }: any) {
   const [tradingAccount, setTradingAccount] = useState<any>(null);
   const [openTrades, setOpenTrades] = useState<any[]>([]);
   const [tradeHistory, setTradeHistory] = useState<any[]>([]);
@@ -80,19 +80,22 @@ export default function Investments({ user }: any) {
       
       if (querySnapshot && querySnapshot.length > 0) {
         const acc = querySnapshot[0];
+        const realBal = Number(acc.balance) || Number(account?.balance) || 0;
         setTradingAccount({
           ...acc,
-          freeMargin: acc.free_margin ?? acc.freeMargin ?? 10000.00,
-          equity: acc.equity ?? 10000.00,
+          balance: realBal,
+          freeMargin: acc.free_margin ?? acc.freeMargin ?? realBal,
+          equity: acc.equity ?? realBal,
           margin: acc.margin ?? 0
         });
       } else {
+        const realBal = Number(account?.balance) || 0;
         const newAcc = {
           user_id: user.id,
-          balance: 10000.00,
-          equity: 10000.00,
+          balance: realBal,
+          equity: realBal,
           margin: 0.00,
-          free_margin: 10000.00,
+          free_margin: realBal,
           leverage: '1:100',
           status: 'Active'
         };
@@ -100,9 +103,10 @@ export default function Investments({ user }: any) {
         if (docRef) {
           setTradingAccount({ 
             ...docRef, 
-            equity: docRef.equity ?? 10000.00, 
+            balance: Number(docRef.balance) || realBal,
+            equity: docRef.equity ?? realBal, 
             margin: docRef.margin ?? 0, 
-            freeMargin: docRef.free_margin ?? 10000.00 
+            freeMargin: docRef.free_margin ?? realBal 
           });
         }
       }

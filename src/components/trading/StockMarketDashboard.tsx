@@ -33,7 +33,7 @@ export default function StockMarketDashboard({ user, account, isDarkMode = false
   // Positions & Portfolio
   const [positions, setPositions] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [portfolioValue, setPortfolioValue] = useState<number>(account?.balance || 10000);
+  const [portfolioValue, setPortfolioValue] = useState<number>(Number(account?.balance) || 0);
   const [investedValue, setInvestedValue] = useState<number>(0);
   const [todayPnl, setTodayPnl] = useState<number>(0);
   const [totalPnl, setTotalPnl] = useState<number>(0);
@@ -315,7 +315,7 @@ export default function StockMarketDashboard({ user, account, isDarkMode = false
         </div>
         <div className="flex flex-col">
           <span className="text-xs uppercase font-bold text-slate-300">Available Cash</span>
-          <span className="text-xl font-bold mt-1 text-emerald-400">${(account?.balance || 10000).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
+          <span className="text-xl font-bold mt-1 text-emerald-400">${(Number(account?.balance) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span>
         </div>
         <div className="flex flex-col">
           <span className="text-xs uppercase font-bold text-slate-300">Invested Value</span>

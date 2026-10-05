@@ -220,7 +220,7 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
   // 4. Ensure initial account in Supabase ONLY IF it does not already exist
   if (!existingAccountInDb) {
     const initialAccNum = signupFields.accountNumber || signupFields.account_number || ('9424' + Math.floor(100000 + Math.random() * 900000));
-    const initialBalance = signupFields.balance !== undefined ? signupFields.balance : 1000.00;
+    const initialBalance = signupFields.balance !== undefined ? signupFields.balance : 0.00;
     const initialAccType = signupFields.accountType || signupFields.account_type || 'checking';
 
     const accountRecord = {
@@ -296,10 +296,10 @@ export const syncRegisteredUser = async (userObj: any, signupFields: Record<stri
       await supabase.from('trading_accounts').insert({
         user_id: userId,
         account_number: trdAccNum,
-        balance: 10000.00,
-        equity: 10000.00,
+        balance: 0.00,
+        equity: 0.00,
         margin: 0.00,
-        free_margin: 10000.00,
+        free_margin: 0.00,
         leverage: '1:100',
         status: 'active'
       });

@@ -99,11 +99,11 @@ export default function Dashboard({ user }: { user: any }) {
     // Fetch crypto_wallets for trading balance so overview total balance matches trading balance
     const { data: walletData } = await supabase.from('crypto_wallets').select('*').eq('user_id', user.id).maybeSingle();
     if (walletData && walletData.trading_balance !== undefined && walletData.trading_balance !== null) {
-      setTradingBalance(Number(walletData.trading_balance));
+      setTradingBalance(Number(walletData.trading_balance) || 0);
     } else if (accData && accData.length > 0) {
-      setTradingBalance(Number(accData[0].balance || 10000));
+      setTradingBalance(Number(accData[0].balance) || 0);
     } else {
-      setTradingBalance(10000);
+      setTradingBalance(0);
     }
     
     // Fetch fresh user profile info directly from Supabase
@@ -406,7 +406,10 @@ function HomeView({ account, accountId, tradingBalance, showBalance, setShowBala
   const fullName = getUserDisplayName(userData, user);
   const avatarSrc = getUserPhotoURL(userData, user);
   const accountStatus = account?.status || 'active';
-  const displayBalance = tradingBalance > 0 ? tradingBalance : (account?.balance || 10000);
+  const rawAccountBal = account?.balance !== undefined && account?.balance !== null ? Number(account.balance) : 0;
+  const displayBalance = tradingBalance !== undefined && tradingBalance !== null && !isNaN(tradingBalance)
+    ? tradingBalance
+    : rawAccountBal;
 
   return (
     <div className="px-4 pb-6 space-y-6">

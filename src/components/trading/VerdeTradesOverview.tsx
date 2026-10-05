@@ -35,9 +35,9 @@ export default function VerdeTradesOverview({
   ]);
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Trader';
-  const totalBalance = account?.balance || 782.72;
-  const totalProfit = 658.84;
-  const totalDeposited = 1200.00;
+  const totalBalance = Number(account?.balance) || 0;
+  const totalProfit = Number(account?.profit) || 0;
+  const totalDeposited = Number(account?.deposited) || 0;
 
   const cryptoMarkets = INITIAL_MARKETS.filter(m => m.category === 'Crypto');
   const stockMarkets = INITIAL_MARKETS.filter(m => m.category === 'Stocks');

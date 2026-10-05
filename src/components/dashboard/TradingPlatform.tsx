@@ -14,13 +14,13 @@ import EducationFAQView from '../trading/EducationFAQView';
 export default function TradingPlatform({ user, account }: { user: any; account: any }) {
   const [activeTab, setActiveTab] = useState<string>('showcase');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
-  const [liveEquity, setLiveEquity] = useState<number>(account?.balance || 1000);
+  const [liveEquity, setLiveEquity] = useState<number>(Number(account?.balance) || 0);
   const [selectedAccount, setSelectedAccount] = useState<any>(account);
   const [selectedAccountType, setSelectedAccountType] = useState<string>('Standard Live');
 
   useEffect(() => {
-    if (account?.balance) {
-      setLiveEquity(account.balance);
+    if (account?.balance !== undefined) {
+      setLiveEquity(Number(account.balance) || 0);
       setSelectedAccount(account);
     }
   }, [account]);

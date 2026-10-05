@@ -73,9 +73,7 @@ export default function TradingDashboard({ user, account, setActiveTab, isDarkMo
       if (dashRes.ok) {
         const dashJson = await dashRes.json().catch(() => null);
         if (dashJson) {
-          if (dashJson.balance === 10000 || dashJson.balance === undefined || dashJson.balance === null) {
-            dashJson.balance = realTradingBalance;
-          }
+          dashJson.balance = realTradingBalance;
           setDashboardData(dashJson);
         }
       } else {

@@ -796,7 +796,7 @@ app.post('/api/trading/execute-order', async (req, res) => {
     const requiredMargin = lev > 1 ? tradeCost / lev : tradeCost;
 
     if (accData) {
-      const currentBal = Number(accData.balance) || 10000;
+      const currentBal = Number(accData.balance) || 0;
       const newBal = Math.max(0, currentBal - requiredMargin);
       await supabaseAdmin
         .from('accounts')
@@ -805,7 +805,7 @@ app.post('/api/trading/execute-order', async (req, res) => {
     } else {
       await supabaseAdmin.from('accounts').insert([{
         user_id: validUserId,
-        balance: Math.max(0, 10000 - requiredMargin),
+        balance: 0,
         currency: 'USD'
       }]);
     }
@@ -1225,7 +1225,7 @@ async function handleExecuteOrderProxy(req: any, res: any) {
     const requiredMargin = lev > 1 ? tradeCost / lev : tradeCost;
 
     if (accData) {
-      const currentBal = Number(accData.balance) || 10000;
+      const currentBal = Number(accData.balance) || 0;
       const newBal = Math.max(0, currentBal - requiredMargin);
       await supabaseAdmin
         .from('accounts')
@@ -1234,7 +1234,7 @@ async function handleExecuteOrderProxy(req: any, res: any) {
     } else {
       await supabaseAdmin.from('accounts').insert([{
         user_id: validUserId,
-        balance: Math.max(0, 10000 - requiredMargin),
+        balance: 0,
         currency: 'USD'
       }]);
     }
@@ -1599,7 +1599,7 @@ app.get('/api/trading/dashboard', async (req, res) => {
 
     const mainAccount = accounts?.[0] || { balance: 0, currency: 'USD' };
     const rawMainBal = Number(mainAccount.balance) || 0;
-    const balance = tradingWalletBalance !== null ? tradingWalletBalance : (rawMainBal === 10000 ? 0 : rawMainBal);
+    const balance = tradingWalletBalance !== null ? tradingWalletBalance : rawMainBal;
 
     // Fetch positions with robust error handling
     let positions: any[] = [];
