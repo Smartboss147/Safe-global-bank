@@ -24,14 +24,14 @@ import ThemeToggle from './ThemeToggle';
 import { 
   Menu, Bell, Eye, EyeOff, Activity, CreditCard, LayoutGrid, 
   Send, Globe, Download, HandCoins, Receipt, HelpCircle, LogOut, 
-  ChevronLeft, Settings as SettingsIcon, Home, BarChart2, User, Wallet, History, X
+  ChevronLeft, Settings as SettingsIcon, Home, BarChart2, User, Wallet, History, X,
+  ShieldCheck, TrendingUp
 } from 'lucide-react';
 
 export default function Dashboard({ user }: { user: any }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState<any>(null);
   const [accountId, setAccountId] = useState<string | null>(null);
-  const [tradingBalance, setTradingBalance] = useState<number>(0);
   const [userData, setUserData] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [showBalance, setShowBalance] = useState(true);
@@ -94,16 +94,6 @@ export default function Dashboard({ user }: { user: any }) {
       console.log('[Dashboard] Fresh account data from Supabase:', accData[0]);
       setAccountId(accData[0].id);
       setAccount(accData[0]);
-    }
-
-    // Fetch crypto_wallets for trading balance so overview total balance matches trading balance
-    const { data: walletData } = await supabase.from('crypto_wallets').select('*').eq('user_id', user.id).maybeSingle();
-    if (walletData && walletData.trading_balance !== undefined && walletData.trading_balance !== null) {
-      setTradingBalance(Number(walletData.trading_balance) || 0);
-    } else if (accData && accData.length > 0) {
-      setTradingBalance(Number(accData[0].balance) || 0);
-    } else {
-      setTradingBalance(0);
     }
     
     // Fetch fresh user profile info directly from Supabase
@@ -188,7 +178,7 @@ export default function Dashboard({ user }: { user: any }) {
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
-        return <HomeView account={account} accountId={accountId} tradingBalance={tradingBalance} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
+        return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
       case 'transfers': return <div className="p-4"><Transfers user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'crypto': return <div className="p-4"><CryptoWallet user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'trading': return <div className="p-4"><TradingPlatform user={user} account={account} /></div>;
@@ -348,11 +338,11 @@ export default function Dashboard({ user }: { user: any }) {
                   { id: 'history', icon: <Activity />, label: 'Activity', color: 'bg-yellow-100 text-yellow-700' },
                   { id: 'cards', icon: <CreditCard />, label: 'Cards', color: 'bg-green-100 text-green-700' },
                   { id: 'transfers', icon: <Send />, label: 'Transfer', color: 'bg-orange-100 text-orange-700' },
-                  { id: 'crypto', icon: <Globe />, label: 'Crypto', color: 'bg-blue-100 text-blue-700' },
-                  { id: 'trading', icon: <BarChart2 />, label: 'Trading', color: 'bg-indigo-100 text-indigo-700' },
+                  { id: 'savings', icon: <ShieldCheck />, label: 'Savings', color: 'bg-teal-100 text-teal-700' },
+                  { id: 'investments', icon: <TrendingUp />, label: 'Investments', color: 'bg-blue-100 text-blue-700' },
                   { id: 'payments', icon: <Download />, label: 'Deposit', color: 'bg-green-100 text-green-700' },
-                  { id: 'loans', icon: <Wallet />, label: 'Loan', color: 'bg-orange-100 text-orange-700' },
-                  { id: 'irs-refund', icon: <Receipt />, label: 'IRS Refund', color: 'bg-purple-100 text-purple-700' },
+                  { id: 'loans', icon: <Wallet />, label: 'Loans', color: 'bg-orange-100 text-orange-700' },
+                  { id: 'irs-refund', icon: <Receipt />, label: 'Tax Refund', color: 'bg-purple-100 text-purple-700' },
                   { id: 'settings', icon: <SettingsIcon />, label: 'Settings', color: 'bg-green-100 text-green-700' },
                   { id: 'support', icon: <HelpCircle />, label: 'Support', color: 'bg-yellow-100 text-yellow-700' },
                   { id: 'logout', icon: <LogOut />, label: 'Logout', color: 'bg-red-50 text-red-600' }
@@ -401,15 +391,12 @@ export default function Dashboard({ user }: { user: any }) {
   );
 }
 
-function HomeView({ account, accountId, tradingBalance, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
+function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
   const accNum = account?.account_number || account?.accountNumber || '';
   const fullName = getUserDisplayName(userData, user);
   const avatarSrc = getUserPhotoURL(userData, user);
   const accountStatus = account?.status || 'active';
-  const rawAccountBal = account?.balance !== undefined && account?.balance !== null ? Number(account.balance) : 0;
-  const displayBalance = tradingBalance !== undefined && tradingBalance !== null && !isNaN(tradingBalance)
-    ? tradingBalance
-    : rawAccountBal;
+  const displayBalance = account?.balance !== undefined && account?.balance !== null ? Number(account.balance) : 0;
 
   return (
     <div className="px-4 pb-6 space-y-6">
