@@ -122,7 +122,7 @@ export default function TradingDashboard({ user, account, setActiveTab, isDarkMo
     fetchDashboardData();
   }, [user]);
 
-  const firstName = user?.user_metadata?.first_name || user?.email?.split('@')[0] || 'Valued Client';
+  const firstName = user?.user_metadata?.first_name || user?.email?.split('@')[0] || 'Valued Recipient';
   const totalBalance = dashboardData.balance + (dashboardData.invested || 0);
   const profit = dashboardData.profit || 0;
   const deposited = dashboardData.deposited || 0;

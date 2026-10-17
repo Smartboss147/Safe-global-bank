@@ -23,11 +23,11 @@ export default function EducationFAQView({ isDarkMode = false }: EducationFAQVie
     },
     {
       q: 'Are my funds safe with Safe Global Trade?',
-      a: 'Yes. All client deposits are held in segregated bank accounts at Tier-1 international financial institutions, isolated from operational company funds with negative balance protection guarantee.'
+      a: 'Yes. All recipient deposits are held in segregated bank accounts at Tier-1 international financial institutions, isolated from operational company funds with negative balance protection guarantee.'
     },
     {
       q: 'What are the minimum deposit and withdrawal amounts?',
-      a: 'Minimum deposit for Starter Account is $100. Withdrawals are processed instantly through your client portal wallet to your linked bank or crypto wallet.'
+      a: 'Minimum deposit for Starter Account is $100. Withdrawals are processed instantly through your recipient portal wallet to your linked bank or crypto wallet.'
     },
     {
       q: 'Is there an Islamic Swap-Free account option?',

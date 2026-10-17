@@ -302,7 +302,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
       if (user?.email) {
         sendCryptoTransferEmail({
           type: 'outgoing',
-          recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+          recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Recipient',
           recipientEmail: user.email,
           asset: currInfo.code || 'USD',
           assetName: 'Bank Funds',

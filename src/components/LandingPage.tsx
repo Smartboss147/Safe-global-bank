@@ -28,9 +28,9 @@ export default function LandingPage() {
             <a href="#security" className="hover:text-white transition">Security & Compliance</a>
           </div>
           <div className="flex items-center gap-4">
-            <Link to="/login" className="text-sm font-semibold hover:text-blue-400 transition">Client Sign In</Link>
+            <Link to="/login" className="text-sm font-semibold hover:text-blue-400 transition">Recipient Sign In</Link>
             <Link to="/login" className="text-sm font-bold bg-blue-600 text-white px-6 py-2.5 rounded-md hover:bg-blue-500 transition shadow-md shadow-blue-600/30">
-              Client Portal
+              Recipient Portal
             </Link>
           </div>
         </div>
@@ -85,7 +85,7 @@ export default function LandingPage() {
               className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start pt-2"
             >
               <Link to="/login" className="w-full sm:w-auto px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-base font-bold transition flex items-center justify-center gap-2 shadow-xl shadow-blue-600/30">
-                Access Client Portal <ArrowRight size={18} />
+                Access Recipient Portal <ArrowRight size={18} />
               </Link>
               <a href="#services" className="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/15 rounded-md text-base font-semibold transition text-center">
                 Explore Institutional Services
@@ -261,7 +261,7 @@ export default function LandingPage() {
           <p className="text-xl text-gray-300 max-w-2xl mx-auto">Access your government-affiliated banking portal securely with institutional credentials.</p>
           <div className="pt-4">
             <Link to="/login" className="px-10 py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-lg font-bold transition inline-block shadow-2xl shadow-blue-600/30">
-              Access Client Portal
+              Access Recipient Portal
             </Link>
           </div>
         </div>

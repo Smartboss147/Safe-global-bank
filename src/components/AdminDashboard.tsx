@@ -2379,7 +2379,7 @@ export default function AdminDashboard({ user }: { user: any }) {
               <div className="p-4 bg-[#181a22] border border-white/5 rounded-2xl flex items-center justify-between">
                 <div>
                   <p className="font-bold text-white">Maintenance Mode</p>
-                  <p className="text-gray-400 text-[11px]">Prevent client logins during scheduled updates</p>
+                  <p className="text-gray-400 text-[11px]">Prevent recipient logins during scheduled updates</p>
                 </div>
                 <button 
                   onClick={() => {

@@ -256,7 +256,7 @@ export default function ClientPortalWallet({ user, account, fetchAccount, isDark
       {/* Title */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 dark:text-white">Broker Client Portal &amp; Wallet</h2>
+          <h2 className="text-2xl font-black text-slate-900 dark:text-white">Broker Recipient Portal &amp; Wallet</h2>
           <p className="text-sm text-slate-500">
             Manage your live and demo trading accounts, perform instant wallet-to-trading transfers, and view equity statements.
           </p>

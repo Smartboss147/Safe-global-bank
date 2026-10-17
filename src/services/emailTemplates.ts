@@ -24,7 +24,7 @@ export function maskAddress(address: string): string {
 export function generateCryptoTransferEmailHtml(params: CryptoEmailParams): { subject: string; html: string } {
   const {
     type,
-    recipientName = 'Valued Client',
+    recipientName = 'Valued Recipient',
     recipientEmail,
     asset,
     assetName = asset,

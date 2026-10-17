@@ -215,13 +215,13 @@ export default function ShowcaseLanding({
       <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 rounded-3xl text-white p-8 md:p-12 shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
         <div className="space-y-4 max-w-xl">
           <div className="flex items-center gap-2 text-amber-400 text-xs font-bold uppercase tracking-wider">
-            <Shield size={16} /> Regulatory Compliance &amp; Client Fund Security
+            <Shield size={16} /> Regulatory Compliance &amp; Recipient Fund Security
           </div>
           <h2 className="text-2xl md:text-3xl font-black">
             Your Capital is Safeguarded by Safe Global Trade
           </h2>
           <p className="text-slate-300 text-xs md:text-sm leading-relaxed">
-            Client funds are stored in segregated accounts at Tier-1 international banks, completely separate from company operational assets, protected with negative balance guarantee and enterprise SSL encryption.
+            Recipient funds are stored in segregated accounts at Tier-1 international banks, completely separate from company operational assets, protected with negative balance guarantee and enterprise SSL encryption.
           </p>
         </div>
 

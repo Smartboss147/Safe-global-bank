@@ -421,7 +421,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
 
       const emailParams = {
         type: 'outgoing' as const,
-        recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+        recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Recipient',
         recipientEmail: user.email,
         asset: sendAsset.symbol,
         assetName: sendAsset.name,
@@ -509,7 +509,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
 
       const emailParams = {
         type: 'incoming' as const,
-        recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+        recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Recipient',
         recipientEmail: user.email,
         asset: selectedReceiveAsset.symbol,
         assetName: selectedReceiveAsset.name,
@@ -659,7 +659,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
 
       const emailParams = {
         type: 'incoming' as const,
-        recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Client',
+        recipientName: user.displayName || user.email?.split('@')[0] || 'Valued Recipient',
         recipientEmail: user.email,
         asset: mainTransferAsset.symbol,
         assetName: mainTransferAsset.name,
@@ -1456,7 +1456,7 @@ export default function CryptoWallet({ user, account, fetchAccount }: any) {
                         const subject = emailLog?.metadata?.subject || `Crypto Transfer Confirmation - Ref: ${refId}`;
                         const html = emailLog?.metadata?.html || generateCryptoTransferEmailHtml({
                           type: isOutgoing ? 'outgoing' : 'incoming',
-                          recipientName: user?.displayName || user?.email?.split('@')[0] || 'Valued Client',
+                          recipientName: user?.displayName || user?.email?.split('@')[0] || 'Valued Recipient',
                           recipientEmail: user?.email,
                           asset: tx.asset || 'BTC',
                           amount: tx.amount,
