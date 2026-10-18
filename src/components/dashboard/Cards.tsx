@@ -22,7 +22,7 @@ export default function Cards({ user, account, userData }: { user: any, account:
     user?.user_metadata?.name ||
     getUserDisplayName(userData, user);
 
-  const cardholderName = (rawName && !rawName.includes('@') && rawName !== 'Valued Customer') ? rawName.toUpperCase() : 'ERIGA BOSS';
+  const cardholderName = (rawName && !rawName.includes('@') && rawName !== 'Valued Customer') ? rawName.toUpperCase() : (user?.email?.split('@')[0]?.toUpperCase() || 'VALUED RECIPIENT');
 
   return (
     <div className="bg-white rounded-[2rem] shadow-xl overflow-hidden min-h-[80vh] pb-6">

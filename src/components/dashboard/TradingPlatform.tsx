@@ -11,7 +11,7 @@ import ClientPortalWallet from '../trading/ClientPortalWallet';
 import TradingToolsView from '../trading/TradingToolsView';
 import EducationFAQView from '../trading/EducationFAQView';
 
-export default function TradingPlatform({ user, account }: { user: any; account: any }) {
+export default function TradingPlatform({ user, account, userData }: { user: any; account: any; userData?: any }) {
   const [activeTab, setActiveTab] = useState<string>('showcase');
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [liveEquity, setLiveEquity] = useState<number>(Number(account?.balance) || 0);
@@ -49,6 +49,7 @@ export default function TradingPlatform({ user, account }: { user: any; account:
           <TradingDashboard
             user={user}
             account={account}
+            userData={userData}
             setActiveTab={setActiveTab}
             isDarkMode={isDarkMode}
           />

@@ -10,11 +10,12 @@ import {
 interface TradingDashboardProps {
   user: any;
   account: any;
+  userData?: any;
   setActiveTab: (tab: string) => void;
   isDarkMode?: boolean;
 }
 
-export default function TradingDashboard({ user, account, setActiveTab, isDarkMode = false }: TradingDashboardProps) {
+export default function TradingDashboard({ user, account, userData, setActiveTab, isDarkMode = false }: TradingDashboardProps) {
   const [dashboardData, setDashboardData] = useState<any>({
     balance: 0,
     profit: 0,
@@ -122,7 +123,15 @@ export default function TradingDashboard({ user, account, setActiveTab, isDarkMo
     fetchDashboardData();
   }, [user]);
 
-  const firstName = user?.user_metadata?.first_name || user?.email?.split('@')[0] || 'Valued Recipient';
+  const firstName = 
+    userData?.display_name || 
+    userData?.full_name || 
+    (userData?.first_name ? `${userData.first_name} ${userData.last_name || ''}`.trim() : null) || 
+    account?.account_name || 
+    user?.user_metadata?.full_name || 
+    user?.user_metadata?.first_name || 
+    user?.email?.split('@')[0] || 
+    'Valued Recipient';
   const totalBalance = dashboardData.balance + (dashboardData.invested || 0);
   const profit = dashboardData.profit || 0;
   const deposited = dashboardData.deposited || 0;

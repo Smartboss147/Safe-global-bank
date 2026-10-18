@@ -181,7 +181,7 @@ export default function Dashboard({ user }: { user: any }) {
         return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
       case 'transfers': return <div className="p-4"><Transfers user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'crypto': return <div className="p-4"><CryptoWallet user={user} account={account} fetchAccount={fetchAccount} /></div>;
-      case 'trading': return <div className="p-4"><TradingPlatform user={user} account={account} /></div>;
+      case 'trading': return <div className="p-4"><TradingPlatform user={user} account={account} userData={userData} /></div>;
       case 'payments': return <div className="p-4"><Payments user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'cards': return <div className="p-4"><Cards user={user} account={account} userData={userData} /></div>;
       case 'savings': return <div className="p-4"><Savings user={user} account={account} fetchAccount={fetchAccount} /></div>;
@@ -338,8 +338,8 @@ export default function Dashboard({ user }: { user: any }) {
                   { id: 'history', icon: <Activity />, label: 'Activity', color: 'bg-yellow-100 text-yellow-700' },
                   { id: 'cards', icon: <CreditCard />, label: 'Cards', color: 'bg-green-100 text-green-700' },
                   { id: 'transfers', icon: <Send />, label: 'Transfer', color: 'bg-orange-100 text-orange-700' },
-                  { id: 'savings', icon: <ShieldCheck />, label: 'Savings', color: 'bg-teal-100 text-teal-700' },
-                  { id: 'investments', icon: <TrendingUp />, label: 'Investments', color: 'bg-blue-100 text-blue-700' },
+                  { id: 'crypto', icon: <Globe />, label: 'Crypto', color: 'bg-blue-100 text-blue-700' },
+                  { id: 'trading', icon: <TrendingUp />, label: 'Trading', color: 'bg-purple-100 text-purple-700' },
                   { id: 'payments', icon: <Download />, label: 'Deposit', color: 'bg-green-100 text-green-700' },
                   { id: 'loans', icon: <Wallet />, label: 'Loans', color: 'bg-orange-100 text-orange-700' },
                   { id: 'irs-refund', icon: <Receipt />, label: 'Tax Refund', color: 'bg-purple-100 text-purple-700' },
