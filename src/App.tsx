@@ -20,8 +20,8 @@ export default function App() {
 
   useEffect(() => {
     try {
-      if (!localStorage.getItem('smartsupp_key')) {
-        localStorage.setItem('smartsupp_key', '7d57842cdad4ea0fb74cdb6aa4d7b6f84d0a087b');
+      if (!localStorage.getItem('tawk_id')) {
+        localStorage.setItem('tawk_id', '6ad8a8f42a7cf034b5ba7a23/1k5f57vcn');
       }
       initializeCurrencies(supabase);
 

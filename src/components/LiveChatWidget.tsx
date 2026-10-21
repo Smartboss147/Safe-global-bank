@@ -16,19 +16,18 @@ export default function LiveChatWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const smartsuppKey = localStorage.getItem('smartsupp_key');
-    if (smartsuppKey && !(window as any).smartsupp) {
-      (window as any)._smartsupp = (window as any)._smartsupp || {};
-      (window as any)._smartsupp.key = smartsuppKey;
+    const tawkId = localStorage.getItem('tawk_id') || '6ad8a8f42a7cf034b5ba7a23/1k5f57vcn';
+    if (!(window as any).Tawk_API) {
+      (window as any).Tawk_API = (window as any).Tawk_API || {};
+      (window as any).Tawk_LoadStart = new Date();
       (function(d: Document) {
-        var s: any, c: any, o: any = (window as any).smartsupp = function() { o._.push(arguments); };
-        s = d.getElementsByTagName('script')[0];
-        c = d.createElement('script');
-        c.type = 'text/javascript';
-        c.async = true;
-        c.src = 'https://www.smartsuppchat.com/loader.js?';
-        if (s && s.parentNode) {
-          s.parentNode.insertBefore(c, s);
+        var s1 = d.createElement("script"), s0 = d.getElementsByTagName("script")[0];
+        s1.async = true;
+        s1.src = `https://embed.tawk.to/${tawkId}`;
+        s1.charset = 'UTF-8';
+        s1.setAttribute('crossorigin', '*');
+        if (s0 && s0.parentNode) {
+          s0.parentNode.insertBefore(s1, s0);
         }
       })(document);
     }
