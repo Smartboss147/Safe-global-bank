@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { logout } from '../lib/auth';
 import { getUserDisplayName, getUserPhotoURL, loadUserProfile } from '../utils/profile';
-import { formatCurrencyAmount, getCurrencyInfo } from '../utils/currency';
+import { formatCurrencyAmount } from '../utils/currency';
 import { motion, AnimatePresence } from 'motion/react';
-import TransactionForm from './TransactionForm';
 import TransactionHistory from './TransactionHistory';
 import SpendingChart from './dashboard/SpendingChart';
 import Transfers from './dashboard/Transfers';
@@ -21,13 +20,15 @@ import SecurityCenter from './dashboard/SecurityCenter';
 import CustomerSupport from './dashboard/CustomerSupport';
 import IRSRefund from './dashboard/IRSRefund';
 import ThemeToggle from './ThemeToggle';
+import LanguageSelector from './LanguageSelector';
 import { useNotifications } from '../context/NotificationContext';
+import { useLanguage } from '../context/LanguageContext';
 import MonthlyBudgetWidget from './dashboard/MonthlyBudgetWidget';
 import { 
   Menu, Bell, Eye, EyeOff, Activity, CreditCard, LayoutGrid, 
-  Send, Globe, Download, HandCoins, Receipt, HelpCircle, LogOut, 
+  Send, Globe, Download, Receipt, HelpCircle, LogOut, 
   ChevronLeft, Settings as SettingsIcon, Home, BarChart2, User, Wallet, History, X,
-  ShieldCheck, TrendingUp
+  TrendingUp
 } from 'lucide-react';
 
 export default function Dashboard({ user }: { user: any }) {
@@ -39,7 +40,8 @@ export default function Dashboard({ user }: { user: any }) {
   const [showBalance, setShowBalance] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
-  const { notifications, unreadCount, showNotifications, setShowNotifications, markAsRead } = useNotifications();
+  const { notifications, showNotifications, setShowNotifications } = useNotifications();
+  const { t } = useLanguage();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -72,17 +74,13 @@ export default function Dashboard({ user }: { user: any }) {
   const fetchAccount = async () => {
     if (!user) return;
     
-    // Fetch fresh account directly from Supabase
     const { data: accData } = await supabase.from('accounts').select('*').eq('user_id', user.id);
     if (accData && accData.length > 0) {
-      console.log('[Dashboard] Fresh account data from Supabase:', accData[0]);
       setAccountId(accData[0].id);
       setAccount(accData[0]);
     }
     
-    // Fetch fresh user profile info directly from Supabase
     const profile = await loadUserProfile(user.id, user);
-    console.log('[Dashboard] Fresh profile data from Supabase:', profile);
     setUserData(profile);
   };
 
@@ -91,43 +89,31 @@ export default function Dashboard({ user }: { user: any }) {
 
     fetchAccount();
 
-    console.log(`[Dashboard] Initializing Supabase Realtime subscriptions for user ${user.id}...`);
-
-    // 1. Account channel subscription (Balance, status, currency, account type updates)
     const accChannel = supabase.channel(`dashboard_acc_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts', filter: `user_id=eq.${user.id}` }, payload => {
-        console.log('[Dashboard Realtime] Account table update received:', payload);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts', filter: `user_id=eq.${user.id}` }, () => {
         fetchAccount();
       })
       .subscribe();
 
-    // 2. Profile channel subscription (KYC status, account status, user details updates)
     const profileChannel = supabase.channel(`dashboard_prof_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` }, payload => {
-        console.log('[Dashboard Realtime] Profile table update received:', payload);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` }, () => {
         fetchAccount();
       })
       .subscribe();
 
-    // 3. Wallets channel subscription
     const walletChannel = supabase.channel(`dashboard_wallets_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` }, payload => {
-        console.log('[Dashboard Realtime] Wallets table update received:', payload);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` }, () => {
         fetchAccount();
       })
       .subscribe();
 
-    // 4. KYC Documents channel subscription
     const kycChannel = supabase.channel(`dashboard_kyc_${user.id}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_documents', filter: `user_id=eq.${user.id}` }, payload => {
-        console.log('[Dashboard Realtime] KYC Documents table update received:', payload);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'kyc_documents', filter: `user_id=eq.${user.id}` }, () => {
         fetchAccount();
       })
       .subscribe();
 
-    // 5. Window event listener for user updates
     const handleSyncEvent = () => {
-      console.log('[Dashboard] Window event user_registered_or_updated received, refetching...');
       fetchAccount();
     };
     window.addEventListener('user_registered_or_updated', handleSyncEvent);
@@ -143,9 +129,9 @@ export default function Dashboard({ user }: { user: any }) {
 
   const greeting = () => {
     const hour = currentTime.getHours();
-    if (hour < 12) return 'Good Morning';
-    if (hour < 18) return 'Good Afternoon';
-    return 'Good Evening';
+    if (hour < 12) return t('goodMorning');
+    if (hour < 18) return t('goodAfternoon');
+    return t('goodEvening');
   };
 
   const handleAction = async (tab: string) => {
@@ -162,7 +148,7 @@ export default function Dashboard({ user }: { user: any }) {
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
-        return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
+        return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} t={t} />;
       case 'transfers': return <div className="p-4"><Transfers user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'crypto': return <div className="p-4"><CryptoWallet user={user} account={account} fetchAccount={fetchAccount} /></div>;
       case 'trading': return <div className="p-4"><TradingPlatform user={user} account={account} userData={userData} /></div>;
@@ -175,9 +161,9 @@ export default function Dashboard({ user }: { user: any }) {
       case 'security': return <div className="p-4"><SecurityCenter user={user} userData={userData} /></div>;
       case 'settings': return <div className="p-4"><Settings user={user} userData={userData} fetchAccount={fetchAccount} /></div>;
       case 'support': return <div className="p-4"><CustomerSupport user={user} /></div>;
-      case 'stats': return <div className="p-4 space-y-6"><h2 className="text-2xl font-bold">Analytics & Budgets</h2><SpendingChart /><MonthlyBudgetWidget user={user} account={account} /></div>;
+      case 'stats': return <div className="p-4 space-y-6"><h2 className="text-2xl font-bold">{t('analyticsAndBudgets')}</h2><SpendingChart /><MonthlyBudgetWidget user={user} account={account} /></div>;
       case 'history': return <div className="p-4"><TransactionHistory user={user} /></div>;
-      default: return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
+      default: return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} t={t} />;
     }
   };
 
@@ -194,7 +180,8 @@ export default function Dashboard({ user }: { user: any }) {
             <span className="text-gray-900 dark:text-white">GLOBAL</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <LanguageSelector />
           <ThemeToggle />
           <button className="relative p-2 rounded-full hover:bg-gray-100 dark:hover:bg-slate-800 transition text-gray-700 dark:text-slate-200" onClick={() => setShowNotifications(true)}>
             <Bell size={22} />
@@ -227,13 +214,13 @@ export default function Dashboard({ user }: { user: any }) {
                         onClick={() => { setIsProfileDropdownOpen(false); handleAction('settings'); }} 
                         className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
                       >
-                        <SettingsIcon size={16} /> Profile Settings
+                        <SettingsIcon size={16} /> {t('profileSettings')}
                       </button>
                       <button 
                         onClick={() => { setIsProfileDropdownOpen(false); handleAction('logout'); }} 
                         className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 font-bold"
                       >
-                        <LogOut size={16} /> Sign Out
+                        <LogOut size={16} /> {t('logout')}
                       </button>
                     </div>
                   </motion.div>
@@ -251,23 +238,23 @@ export default function Dashboard({ user }: { user: any }) {
         {showNotifications && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60]" onClick={() => setShowNotifications(false)} />
-            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="fixed top-16 right-4 w-80 bg-white rounded-2xl shadow-2xl z-[70] border border-gray-100 overflow-hidden">
-               <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                  <h3 className="font-bold text-gray-900">Notifications</h3>
-                  <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="fixed top-16 right-4 w-80 bg-white dark:bg-slate-800 rounded-2xl shadow-2xl z-[70] border border-gray-100 dark:border-slate-700 overflow-hidden">
+               <div className="p-4 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-gray-50/50 dark:bg-slate-800">
+                  <h3 className="font-bold text-gray-900 dark:text-white">{t('notifications')}</h3>
+                  <button onClick={() => setShowNotifications(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><X size={20} /></button>
                </div>
                <div className="max-h-80 overflow-y-auto">
                   {notifications.length > 0 ? notifications.map((notification) => (
-                    <div key={notification.id} className="p-4 border-b border-gray-50 hover:bg-gray-50 transition cursor-pointer">
-                       <p className="text-sm font-bold text-gray-900 mb-1">{notification.title}</p>
-                       <p className="text-xs text-gray-500">{notification.message}</p>
-                       <p className="text-[10px] font-bold text-blue-600 mt-2 uppercase tracking-wide">
+                    <div key={notification.id} className="p-4 border-b border-gray-50 dark:border-slate-700/50 hover:bg-gray-50 dark:hover:bg-slate-700/30 transition cursor-pointer">
+                       <p className="text-sm font-bold text-gray-900 dark:text-white mb-1">{notification.title}</p>
+                       <p className="text-xs text-gray-500 dark:text-slate-400">{notification.message}</p>
+                       <p className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mt-2 uppercase tracking-wide">
                          {notification.created_at ? new Date(notification.created_at).toLocaleDateString() : 'Just now'}
                        </p>
                     </div>
                   )) : (
-                    <div className="p-8 text-center text-gray-500 text-sm">
-                      No notifications right now.
+                    <div className="p-8 text-center text-gray-500 dark:text-slate-400 text-sm">
+                      {t('noNotifications')}
                     </div>
                   )}
                </div>
@@ -290,50 +277,50 @@ export default function Dashboard({ user }: { user: any }) {
         {isMenuOpen && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40" onClick={() => setIsMenuOpen(false)} />
-            <motion.div initial={{ opacity: 0, y: '100%', scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: '100%', scale: 0.9 }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto bg-white rounded-t-[2.5rem] z-50 p-6 shadow-2xl">
-              <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6" />
+            <motion.div initial={{ opacity: 0, y: '100%', scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: '100%', scale: 0.9 }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className="fixed bottom-0 left-0 right-0 max-w-2xl mx-auto bg-white dark:bg-slate-800 rounded-t-[2.5rem] z-50 p-6 shadow-2xl border-t border-gray-100 dark:border-slate-700">
+              <div className="w-12 h-1.5 bg-gray-200 dark:bg-slate-700 rounded-full mx-auto mb-6" />
               
               <div className="flex justify-between items-start mb-6 px-2">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-gray-100 overflow-hidden border border-gray-200">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-slate-700 overflow-hidden border border-gray-200 dark:border-slate-600">
                     <img src={getUserPhotoURL(userData, user)} alt="Profile" className="w-full h-full object-cover" />
                   </div>
                   <div>
-                    <h3 className="font-bold text-gray-900">{getUserDisplayName(userData, user)}</h3>
-                    <p className="text-sm text-gray-500">Account: {account ? (account.account_number || account.accountNumber) : '••••••••'}</p>
+                    <h3 className="font-bold text-gray-900 dark:text-white">{getUserDisplayName(userData, user)}</h3>
+                    <p className="text-sm text-gray-500 dark:text-slate-400">{t('accountNumber')}: {account ? (account.account_number || account.accountNumber) : '••••••••'}</p>
                   </div>
                 </div>
                 <button 
                   onClick={() => { setIsMenuOpen(false); setActiveTab('security'); }}
-                  className="text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 transition"
+                  className="text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 transition"
                 >
-                   Verify Account
+                   {t('verifyAccount')}
                 </button>
               </div>
 
               <div className="text-center mb-6">
-                <h2 className="text-xl font-bold text-gray-900">Banking Menu</h2>
-                <p className="text-sm text-gray-500">Select an option to continue</p>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">{t('bankingMenu')}</h2>
+                <p className="text-sm text-gray-500 dark:text-slate-400">{t('selectOptionToContinue')}</p>
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 {[
-                  { id: 'overview', icon: <Home />, label: 'Home', color: 'bg-green-100 text-green-700' },
-                  { id: 'history', icon: <Activity />, label: 'Activity', color: 'bg-yellow-100 text-yellow-700' },
-                  { id: 'cards', icon: <CreditCard />, label: 'Cards', color: 'bg-green-100 text-green-700' },
-                  { id: 'transfers', icon: <Send />, label: 'Transfer', color: 'bg-orange-100 text-orange-700' },
-                  { id: 'crypto', icon: <Globe />, label: 'Crypto', color: 'bg-blue-100 text-blue-700' },
-                  { id: 'trading', icon: <TrendingUp />, label: 'Trading', color: 'bg-purple-100 text-purple-700' },
-                  { id: 'payments', icon: <Download />, label: 'Deposit', color: 'bg-green-100 text-green-700' },
-                  { id: 'loans', icon: <Wallet />, label: 'Loans', color: 'bg-orange-100 text-orange-700' },
-                  { id: 'irs-refund', icon: <Receipt />, label: 'Tax Refund', color: 'bg-purple-100 text-purple-700' },
-                  { id: 'settings', icon: <SettingsIcon />, label: 'Settings', color: 'bg-green-100 text-green-700' },
-                  { id: 'support', icon: <HelpCircle />, label: 'Support', color: 'bg-yellow-100 text-yellow-700' },
-                  { id: 'logout', icon: <LogOut />, label: 'Logout', color: 'bg-red-50 text-red-600' }
+                  { id: 'overview', icon: <Home />, label: t('overview'), color: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300' },
+                  { id: 'history', icon: <Activity />, label: t('history'), color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' },
+                  { id: 'cards', icon: <CreditCard />, label: t('cards'), color: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300' },
+                  { id: 'transfers', icon: <Send />, label: t('transfer'), color: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300' },
+                  { id: 'crypto', icon: <Globe />, label: t('crypto'), color: 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300' },
+                  { id: 'trading', icon: <TrendingUp />, label: t('trading'), color: 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' },
+                  { id: 'payments', icon: <Download />, label: t('deposit'), color: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300' },
+                  { id: 'loans', icon: <Wallet />, label: t('loans'), color: 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-300' },
+                  { id: 'irs-refund', icon: <Receipt />, label: t('taxRefund'), color: 'bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300' },
+                  { id: 'settings', icon: <SettingsIcon />, label: t('settings'), color: 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-300' },
+                  { id: 'support', icon: <HelpCircle />, label: t('support'), color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-300' },
+                  { id: 'logout', icon: <LogOut />, label: t('logout'), color: 'bg-red-50 text-red-600 dark:bg-red-950/40 dark:text-red-400' }
                 ].map((item, idx) => (
                   <button key={idx} onClick={() => handleAction(item.id)} className={`flex flex-col items-center justify-center p-4 rounded-2xl ${item.color.split(' ')[0]} transition-transform active:scale-95`}>
                     <div className={`mb-2 ${item.color.split(' ')[1]}`}>{item.icon}</div>
-                    <span className="text-xs font-semibold text-gray-800">{item.label}</span>
+                    <span className="text-xs font-semibold text-gray-800 dark:text-slate-200">{item.label}</span>
                   </button>
                 ))}
               </div>
@@ -344,30 +331,30 @@ export default function Dashboard({ user }: { user: any }) {
 
       {/* Bottom Navigation */}
       <div className="fixed bottom-0 left-0 right-0 z-30 max-w-2xl mx-auto">
-        <div className="absolute inset-0 bg-white/80 backdrop-blur-xl border-t border-gray-200" />
+        <div className="absolute inset-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-t border-gray-200 dark:border-slate-800" />
         <div className="relative px-6 py-4 flex justify-between items-center">
-          <button className={`flex flex-col items-center gap-1 ${activeTab === 'overview' ? 'text-blue-900' : 'text-gray-400'}`} onClick={() => setActiveTab('overview')}>
-            <Home size={24} className={activeTab === 'overview' ? 'fill-blue-900/20' : ''} />
-            <span className="text-[10px] font-bold">Home</span>
+          <button className={`flex flex-col items-center gap-1 ${activeTab === 'overview' ? 'text-blue-900 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500'}`} onClick={() => setActiveTab('overview')}>
+            <Home size={24} className={activeTab === 'overview' ? 'fill-blue-900/20 dark:fill-blue-400/20' : ''} />
+            <span className="text-[10px] font-bold">{t('overview')}</span>
           </button>
-          <button className={`flex flex-col items-center gap-1 ${activeTab === 'stats' ? 'text-blue-900' : 'text-gray-400'}`} onClick={() => setActiveTab('stats')}>
+          <button className={`flex flex-col items-center gap-1 ${activeTab === 'stats' ? 'text-blue-900 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500'}`} onClick={() => setActiveTab('stats')}>
             <BarChart2 size={24} />
-            <span className="text-[10px] font-bold">Stats</span>
+            <span className="text-[10px] font-bold">{t('stats')}</span>
           </button>
           
           <div className="relative -top-6 flex flex-col items-center">
-            <button onClick={() => setIsMenuOpen(true)} className="w-14 h-14 bg-gray-900 text-white rounded-full flex items-center justify-center shadow-xl shadow-gray-900/30 hover:scale-105 transition-transform active:scale-95">
+            <button onClick={() => setIsMenuOpen(true)} className="w-14 h-14 bg-gray-900 dark:bg-slate-800 text-white rounded-full flex items-center justify-center shadow-xl shadow-gray-900/30 hover:scale-105 transition-transform active:scale-95 border border-white/10">
               <LayoutGrid size={24} />
             </button>
           </div>
 
-          <button className={`flex flex-col items-center gap-1 ${activeTab === 'cards' ? 'text-blue-900' : 'text-gray-400'}`} onClick={() => setActiveTab('cards')}>
+          <button className={`flex flex-col items-center gap-1 ${activeTab === 'cards' ? 'text-blue-900 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500'}`} onClick={() => setActiveTab('cards')}>
             <CreditCard size={24} />
-            <span className="text-[10px] font-bold">Cards</span>
+            <span className="text-[10px] font-bold">{t('cards')}</span>
           </button>
-          <button className={`flex flex-col items-center gap-1 ${activeTab === 'settings' ? 'text-blue-900' : 'text-gray-400'}`} onClick={() => setActiveTab('settings')}>
+          <button className={`flex flex-col items-center gap-1 ${activeTab === 'settings' ? 'text-blue-900 dark:text-blue-400' : 'text-gray-400 dark:text-slate-500'}`} onClick={() => setActiveTab('settings')}>
             <User size={24} />
-            <span className="text-[10px] font-bold">Profile</span>
+            <span className="text-[10px] font-bold">{t('profile')}</span>
           </button>
         </div>
       </div>
@@ -375,7 +362,7 @@ export default function Dashboard({ user }: { user: any }) {
   );
 }
 
-function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab }: any) {
+function HomeView({ account, accountId, showBalance, setShowBalance, userData, currentTime, greeting, user, fetchAccount, setActiveTab, t }: any) {
   const accNum = account?.account_number || account?.accountNumber || '';
   const fullName = getUserDisplayName(userData, user);
   const avatarSrc = getUserPhotoURL(userData, user);
@@ -408,7 +395,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
 
         <div className="relative z-10 mb-8">
           <div className="flex items-center gap-2 mb-1">
-            <p className="text-white/80 font-medium">Available Balance</p>
+            <p className="text-white/80 font-medium">{t('availableBalance')}</p>
             <button onClick={() => setShowBalance(!showBalance)} className="text-white/60 hover:text-white transition p-1">
               {showBalance ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -424,7 +411,7 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
               <span className="text-[10px] font-bold">SG</span>
             </div>
             <div>
-              <p className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">Your Account Number</p>
+              <p className="text-[10px] text-white/60 font-semibold uppercase tracking-wider">{t('accountNumber')}</p>
               <div className="flex items-center gap-2">
                 <p className="font-mono text-sm tracking-wider">{accNum ? accNum.replace(/(\d{4})/g, '$1 ').trim() : '••••••••'}</p>
                 <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded flex items-center gap-1 ${
@@ -443,56 +430,56 @@ function HomeView({ account, accountId, showBalance, setShowBalance, userData, c
               onClick={() => setActiveTab('history')}
               className="px-4 py-1.5 bg-white text-[#0A3D36] text-xs font-bold rounded-lg shadow-sm active:scale-95 transition-transform flex items-center gap-1 justify-center"
             >
-              <Activity size={12} /> Transactions
+              <Activity size={12} /> {t('history')}
             </button>
             <button 
               onClick={() => setActiveTab('payments')}
               className="px-4 py-1.5 bg-[#1A6D60] text-white text-xs font-bold rounded-lg shadow-sm border border-white/20 active:scale-95 transition-transform flex items-center gap-1 justify-center"
             >
-              <CreditCard size={12} /> Top up
+              <CreditCard size={12} /> {t('topUp')}
             </button>
           </div>
         </div>
       </div>
 
       {/* What would you like to do today? */}
-      <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
-        <h3 className="text-xl font-bold text-gray-900 mb-1">What would you like to do today?</h3>
-        <p className="text-gray-500 text-sm mb-6">Choose from our popular actions below</p>
+      <div className="bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-gray-100 dark:border-slate-700">
+        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">{t('whatWouldYouLikeToDo')}</h3>
+        <p className="text-gray-500 dark:text-slate-400 text-sm mb-6">{t('quickActions')}</p>
         
         <div className="grid grid-cols-2 gap-4">
           <div 
             onClick={() => setActiveTab('settings')}
-            className="bg-gray-50 border border-gray-100 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-gray-100/80"
+            className="bg-gray-50 dark:bg-slate-700/50 border border-gray-100 dark:border-slate-700 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-gray-100 dark:hover:bg-slate-700"
           >
-            <div className="w-12 h-12 bg-gray-200 text-gray-600 rounded-full flex items-center justify-center mb-3">
+            <div className="w-12 h-12 bg-gray-200 dark:bg-slate-600 text-gray-600 dark:text-slate-200 rounded-full flex items-center justify-center mb-3">
               <Wallet size={24} />
             </div>
-            <span className="font-bold text-gray-800">Account Info</span>
+            <span className="font-bold text-gray-800 dark:text-slate-200">{t('accountInfo')}</span>
           </div>
           
-          <div className="bg-[#E6F0A3] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#dce892]" onClick={() => setActiveTab('transfers')}>
-            <div className="w-12 h-12 bg-[#D1DF7B] text-[#55601C] rounded-full flex items-center justify-center mb-3">
+          <div className="bg-[#E6F0A3] dark:bg-lime-950/40 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#dce892]" onClick={() => setActiveTab('transfers')}>
+            <div className="w-12 h-12 bg-[#D1DF7B] dark:bg-lime-900 text-[#55601C] dark:text-lime-300 rounded-full flex items-center justify-center mb-3">
               <Send size={24} />
             </div>
-            <span className="font-bold text-gray-800">Send Money</span>
+            <span className="font-bold text-gray-800 dark:text-slate-200">{t('sendMoney')}</span>
           </div>
 
           <div 
             onClick={() => { const btn = document.querySelector('header button'); if (btn) (btn as HTMLElement).click(); }}
-            className="bg-[#E6F9EC] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#d4f3dd]"
+            className="bg-[#E6F9EC] dark:bg-emerald-950/40 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#d4f3dd]"
           >
-            <div className="text-green-600 mb-2">
+            <div className="text-green-600 dark:text-emerald-400 mb-2">
               <span className="text-4xl font-light">+</span>
             </div>
-            <span className="font-bold text-gray-800">More</span>
+            <span className="font-bold text-gray-800 dark:text-slate-200">{t('more')}</span>
           </div>
 
-          <div className="bg-[#F5F0FF] rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#eae0fa]" onClick={() => setActiveTab('history')}>
-            <div className="w-12 h-12 bg-[#E6DDF5] text-[#6B44A8] rounded-full flex items-center justify-center mb-3">
+          <div className="bg-[#F5F0FF] dark:bg-purple-950/40 rounded-2xl p-5 flex flex-col items-center justify-center text-center cursor-pointer active:scale-95 transition-transform hover:bg-[#eae0fa]" onClick={() => setActiveTab('history')}>
+            <div className="w-12 h-12 bg-[#E6DDF5] dark:bg-purple-900 text-[#6B44A8] dark:text-purple-300 rounded-full flex items-center justify-center mb-3">
               <History size={24} />
             </div>
-            <span className="font-bold text-gray-800">History</span>
+            <span className="font-bold text-gray-800 dark:text-slate-200">{t('history')}</span>
           </div>
         </div>
       </div>
