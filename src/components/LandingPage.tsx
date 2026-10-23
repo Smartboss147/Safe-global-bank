@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { ShieldCheck, Building2, Globe2, ArrowRight, Lock, Landmark, ChevronRight, CheckCircle2, FileText, Users, Award, Shield, FileCheck, Cpu } from 'lucide-react';
+import { ShieldCheck, Building2, Globe2, ArrowRight, Landmark, CheckCircle2, FileText, Users, Award, Shield, FileCheck, Cpu } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 import heroBg from '../assets/images/crypto_hero_bg_1783840941384.jpg';
 import dashboardMockup from '../assets/images/crypto_dashboard_mockup_1783840953343.jpg';
 import globeNetwork from '../assets/images/crypto_globe_network_1783840964978.jpg';
 
 export default function LandingPage() {
+  const { t } = useLanguage();
+
   return (
     <div className="bg-[#0a131f] text-white min-h-screen font-sans selection:bg-blue-500/30">
       
@@ -17,20 +20,20 @@ export default function LandingPage() {
               <Landmark size={20} className="text-white" />
             </div>
             <div>
-              <span className="font-bold text-lg tracking-tight block">Safe Global Bank</span>
-              <span className="text-[10px] text-blue-400 font-semibold tracking-widest uppercase block -mt-1">Government-Affiliated Institution</span>
+              <span className="font-bold text-lg tracking-tight block">{t('safeGlobalBank')}</span>
+              <span className="text-[10px] text-blue-400 font-semibold tracking-widest uppercase block -mt-1">{t('govAffiliated')}</span>
             </div>
           </div>
           <div className="hidden md:flex gap-8 text-sm font-medium text-gray-300">
-            <a href="#services" className="hover:text-white transition">Services</a>
-            <a href="#institution" className="hover:text-white transition">Institutional Standards</a>
-            <a href="#community" className="hover:text-white transition">Community Impact</a>
-            <a href="#security" className="hover:text-white transition">Security & Compliance</a>
+            <a href="#services" className="hover:text-white transition">{t('services')}</a>
+            <a href="#institution" className="hover:text-white transition">{t('institutionalStandards')}</a>
+            <a href="#community" className="hover:text-white transition">{t('communityImpact')}</a>
+            <a href="#security" className="hover:text-white transition">{t('securityAndCompliance')}</a>
           </div>
           <div className="flex items-center gap-4">
-            <Link to="/login" className="text-sm font-semibold hover:text-blue-400 transition">Recipient Sign In</Link>
+            <Link to="/login" className="text-sm font-semibold hover:text-blue-400 transition">{t('recipientSignIn')}</Link>
             <Link to="/login" className="text-sm font-bold bg-blue-600 text-white px-6 py-2.5 rounded-md hover:bg-blue-500 transition shadow-md shadow-blue-600/30">
-              Recipient Portal
+              {t('recipientPortal')}
             </Link>
           </div>
         </div>
@@ -54,7 +57,7 @@ export default function LandingPage() {
               className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-blue-600/15 border border-blue-400/30 text-blue-300 text-xs font-semibold tracking-wider uppercase"
             >
               <Award size={14} className="text-blue-400" />
-              Government-Affiliated Banking Services
+              {t('heroBadge')}
             </motion.div>
 
             <motion.h1 
@@ -63,9 +66,9 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.1 }}
               className="text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight leading-[1.1]"
             >
-              Secure banking for a <br/>
+              {t('heroTitle1')} <br/>
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-200">
-                connected nation.
+                {t('heroTitle2')}
               </span>
             </motion.h1>
 
@@ -75,7 +78,7 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="text-lg lg:text-xl text-gray-300 max-w-2xl mx-auto lg:mx-0 leading-relaxed font-normal"
             >
-              Trusted Financial Services for Individuals, Businesses and Institutions. Reliable Financial Services Backed by Institutional Standards.
+              {t('heroDesc')}
             </motion.p>
 
             <motion.div 
@@ -85,25 +88,25 @@ export default function LandingPage() {
               className="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start pt-2"
             >
               <Link to="/login" className="w-full sm:w-auto px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-base font-bold transition flex items-center justify-center gap-2 shadow-xl shadow-blue-600/30">
-                Access Recipient Portal <ArrowRight size={18} />
+                {t('accessRecipientPortal')} <ArrowRight size={18} />
               </Link>
               <a href="#services" className="w-full sm:w-auto px-8 py-4 bg-white/5 hover:bg-white/10 border border-white/15 rounded-md text-base font-semibold transition text-center">
-                Explore Institutional Services
+                {t('exploreInstitutional')}
               </a>
             </motion.div>
 
             <div className="pt-6 grid grid-cols-3 gap-6 border-t border-white/10 text-left">
               <div>
                 <p className="text-2xl font-bold text-blue-400">100%</p>
-                <p className="text-xs text-gray-400 mt-1">Government Affiliated Standard</p>
+                <p className="text-xs text-gray-400 mt-1">{t('stat1Desc') || 'Government Affiliated Standard'}</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-blue-400">Institutional</p>
-                <p className="text-xs text-gray-400 mt-1">Grade Security & Compliance</p>
+                <p className="text-xs text-gray-400 mt-1">{t('stat2Desc') || 'Grade Security & Compliance'}</p>
               </div>
               <div>
                 <p className="text-2xl font-bold text-blue-400">Nationwide</p>
-                <p className="text-xs text-gray-400 mt-1">Public & Private Infrastructure</p>
+                <p className="text-xs text-gray-400 mt-1">{t('stat3Desc') || 'Public & Private Infrastructure'}</p>
               </div>
             </div>
           </div>
@@ -127,29 +130,29 @@ export default function LandingPage() {
         <div className="max-w-7xl mx-auto px-6">
           <div className="max-w-3xl mx-auto text-center space-y-6 mb-16">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-blue-500/10 text-blue-400 text-xs font-semibold tracking-widest uppercase">
-              Community & Public Trust
+              {t('communityImpact')}
             </div>
-            <h2 className="text-3xl lg:text-5xl font-bold tracking-tight">Serving Our Communities Through Trusted Financial Services</h2>
+            <h2 className="text-3xl lg:text-5xl font-bold tracking-tight">{t('communityTitle')}</h2>
             <p className="text-gray-300 text-lg leading-relaxed font-normal">
-              Safe Global Bank provides secure and reliable financial services designed to support individuals, businesses and institutions while contributing to a stronger and more connected financial ecosystem.
+              {t('communityDesc')}
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               {
-                title: "Serving Individuals",
-                desc: "Secure, accessible and reliable financial services for everyday banking, savings, and long-term financial security.",
+                title: t('indivTitle'),
+                desc: t('indivDesc'),
                 icon: <Users size={24} className="text-blue-400" />
               },
               {
-                title: "Empowering Businesses",
-                desc: "Robust commercial banking, liquidity solutions, and secure payment infrastructure supporting national enterprises.",
+                title: t('bizTitle'),
+                desc: t('bizDesc'),
                 icon: <Building2 size={24} className="text-blue-400" />
               },
               {
-                title: "Backing Institutions",
-                desc: "Government-affiliated standards providing secure custody, treasury services, and public financial administration.",
+                title: t('instTitle'),
+                desc: t('instDesc'),
                 icon: <Landmark size={24} className="text-blue-400" />
               }
             ].map((item, idx) => (
@@ -168,26 +171,26 @@ export default function LandingPage() {
       {/* Institutional Services Section */}
       <section id="services" className="py-24 max-w-7xl mx-auto px-6">
         <div className="text-center mb-16 space-y-4">
-          <h2 className="text-3xl lg:text-5xl font-bold">Institutional Standards & Capabilities</h2>
-          <p className="text-gray-400 text-lg max-w-2xl mx-auto">Serving individuals, businesses and institutions through secure digital banking and modern financial infrastructure.</p>
+          <h2 className="text-3xl lg:text-5xl font-bold">{t('standardsTitle')}</h2>
+          <p className="text-gray-400 text-lg max-w-2xl mx-auto">{t('standardsDesc')}</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {[
             { 
               icon: <ShieldCheck size={26} />, 
-              title: 'Secure Public Services', 
-              desc: 'State-of-the-art encryption, biometric authentication, and strict adherence to government banking compliance standards.' 
+              title: t('feature1Title'), 
+              desc: t('feature1Desc') 
             },
             { 
               icon: <Globe2 size={26} />, 
-              title: 'Connected Nation Network', 
-              desc: 'Seamless domestic and international settlement infrastructure connecting citizens and institutions globally.' 
+              title: t('feature2Title'), 
+              desc: t('feature2Desc') 
             },
             { 
               icon: <FileText size={26} />, 
-              title: 'Formal Financial Documents', 
-              desc: 'Official tax assistance, IRS refund processing, audit-ready statements, and certified banking certificates.' 
+              title: t('feature3Title'), 
+              desc: t('feature3Desc') 
             },
           ].map((feature, i) => (
             <motion.div 
@@ -209,7 +212,7 @@ export default function LandingPage() {
       </section>
 
       {/* Infrastructure & National Development */}
-      <section className="py-24 border-t border-white/10 relative overflow-hidden bg-gradient-to-b from-transparent via-blue-950/20 to-transparent">
+      <section id="institution" className="py-24 border-t border-white/10 relative overflow-hidden bg-gradient-to-b from-transparent via-blue-950/20 to-transparent">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           <motion.div 
              initial={{ opacity: 0, x: -30 }}
@@ -219,17 +222,17 @@ export default function LandingPage() {
              className="relative z-10 space-y-6"
           >
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-blue-500/10 text-blue-400 text-xs font-bold uppercase tracking-wider">
-              National Economic Infrastructure
+              {t('infraTitle')}
             </div>
-            <h2 className="text-3xl lg:text-5xl font-bold leading-tight">Reliable financial services backed by institutional standards.</h2>
+            <h2 className="text-3xl lg:text-5xl font-bold leading-tight">{t('infraHeading')}</h2>
             <p className="text-gray-300 text-lg leading-relaxed">
-              Safe Global Bank operates under stringent government-affiliated frameworks, providing secure payment infrastructure, national economic development support, and resilient banking services for all citizens and enterprises.
+              {t('infraDesc')}
             </p>
             <ul className="space-y-3 pt-2">
               {[
-                'Strict compliance with government financial regulations',
-                'Advanced secure payment infrastructure & clearing',
-                'Dedicated public sector and institutional account management'
+                t('infraBullet1'),
+                t('infraBullet2'),
+                t('infraBullet3')
               ].map((item, i) => (
                 <li key={i} className="flex items-center gap-3 text-gray-200 font-medium">
                   <div className="w-5 h-5 rounded-full bg-blue-600/20 flex items-center justify-center text-blue-400">
@@ -257,11 +260,11 @@ export default function LandingPage() {
       {/* Final CTA */}
       <section className="py-28 relative overflow-hidden text-center bg-[#070e17] border-t border-white/10">
         <div className="max-w-4xl mx-auto px-6 space-y-8 relative z-10">
-          <h2 className="text-4xl lg:text-6xl font-bold tracking-tight">Secure, accessible and reliable financial services.</h2>
-          <p className="text-xl text-gray-300 max-w-2xl mx-auto">Access your government-affiliated banking portal securely with institutional credentials.</p>
+          <h2 className="text-4xl lg:text-6xl font-bold tracking-tight">{t('heroDesc')}</h2>
+          <p className="text-xl text-gray-300 max-w-2xl mx-auto">{t('recipientPortal')}</p>
           <div className="pt-4">
             <Link to="/login" className="px-10 py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-lg font-bold transition inline-block shadow-2xl shadow-blue-600/30">
-              Access Recipient Portal
+              {t('accessRecipientPortal')}
             </Link>
           </div>
         </div>
@@ -273,21 +276,21 @@ export default function LandingPage() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-12 pb-12 border-b border-white/10">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-blue-500/10 text-blue-400 text-xs font-bold uppercase tracking-wider mb-3">
-                Regulatory Standards & Security
+                {t('securityAndCompliance')}
               </div>
-              <h3 className="text-2xl font-bold">Trust & Compliance</h3>
-              <p className="text-gray-400 text-sm mt-1">Backed by rigorous international banking standards and government oversight.</p>
+              <h3 className="text-2xl font-bold">{t('footerTrust')}</h3>
+              <p className="text-gray-400 text-sm mt-1">{t('footerTrustDesc')}</p>
             </div>
             <div className="flex items-center gap-4 text-xs font-semibold text-gray-300 bg-white/5 border border-white/10 px-4 py-2.5 rounded-lg">
               <ShieldCheck size={18} className="text-emerald-400" />
-              <span>Verified Government-Affiliated Institution</span>
+              <span>{t('govAffiliated')}</span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {[
               {
-                title: "Government Banking Regulated",
+                title: t('govAffiliated'),
                 desc: "Operating under national statutory authority and central regulatory frameworks.",
                 icon: <Landmark size={22} className="text-blue-400" />
               },
@@ -326,10 +329,10 @@ export default function LandingPage() {
             <div className="w-8 h-8 rounded-lg bg-blue-700 flex items-center justify-center">
               <Landmark size={16} className="text-white" />
             </div>
-            <span className="font-bold text-lg text-white">Safe Global Bank</span>
+            <span className="font-bold text-lg text-white">{t('safeGlobalBank')}</span>
           </div>
           <div className="text-gray-400 text-xs text-center md:text-left">
-            © {new Date().getFullYear()} Safe Global Bank. Government-Affiliated Financial Institution. All rights reserved.
+            © {new Date().getFullYear()} {t('safeGlobalBank')}. {t('govAffiliated')}. All rights reserved.
           </div>
           <div className="flex gap-6 text-sm font-medium text-gray-400">
             <a href="#" className="hover:text-white transition">Privacy Policy</a>

@@ -10,7 +10,7 @@ import AdminLogin from './components/AdminLogin';
 import { syncRegisteredUser } from './utils/profile';
 import { initializeCurrencies } from './utils/currency';
 import { ThemeProvider } from './context/ThemeContext';
-import { LanguageProvider } from './context/LanguageContext';
+import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { NotificationProvider } from './context/NotificationContext';
 import ThemeToggle from './components/ThemeToggle';
 import LanguageSelector from './components/LanguageSelector';
@@ -143,14 +143,7 @@ export default function App() {
         <Router>
           <div className="min-h-screen bg-gray-50 dark:bg-slate-900 text-gray-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
             {!user && (
-              <nav className="p-4 bg-white dark:bg-slate-800 shadow-xs border-b border-gray-100 dark:border-slate-700/60 flex justify-between items-center relative z-50">
-                <Link to="/" className="font-bold text-xl tracking-tight text-gray-900 dark:text-white">Safe Global Bank</Link>
-                <div className="flex gap-3 items-center">
-                  <LanguageSelector />
-                  <ThemeToggle />
-                  <Link to="/login" className="text-blue-600 dark:text-blue-400 font-bold hover:text-blue-800 dark:hover:text-blue-300 text-sm">Sign In</Link>
-                </div>
-              </nav>
+              <AppNavbar />
             )}
             <main className={`flex-grow ${!user ? 'p-4' : 'p-0 pb-20'}`}>
               <Routes>
@@ -165,5 +158,19 @@ export default function App() {
         </Router>
       </LanguageProvider>
     </ThemeProvider>
+  );
+}
+
+function AppNavbar() {
+  const { t } = useLanguage();
+  return (
+    <nav className="p-4 bg-white dark:bg-slate-800 shadow-xs border-b border-gray-100 dark:border-slate-700/60 flex justify-between items-center relative z-50">
+      <Link to="/" className="font-bold text-xl tracking-tight text-gray-900 dark:text-white">{t('safeGlobalBank')}</Link>
+      <div className="flex gap-3 items-center">
+        <LanguageSelector />
+        <ThemeToggle />
+        <Link to="/login" className="text-blue-600 dark:text-blue-400 font-bold hover:text-blue-800 dark:hover:text-blue-300 text-sm">{t('recipientSignIn')}</Link>
+      </div>
+    </nav>
   );
 }
