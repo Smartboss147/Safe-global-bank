@@ -10,6 +10,7 @@ import AdminLogin from './components/AdminLogin';
 import { syncRegisteredUser } from './utils/profile';
 import { initializeCurrencies } from './utils/currency';
 import { ThemeProvider } from './context/ThemeContext';
+import { NotificationProvider } from './context/NotificationContext';
 import ThemeToggle from './components/ThemeToggle';
 import LiveChatWidget from './components/LiveChatWidget';
 
@@ -145,7 +146,7 @@ export default function App() {
           )}
           <main className={`flex-grow ${!user ? 'p-4' : 'p-0 pb-20'}`}>
             <Routes>
-              <Route path="/" element={user ? <Dashboard user={user} /> : <LandingPage />} />
+              <Route path="/" element={user ? <NotificationProvider user={user}><Dashboard user={user} /></NotificationProvider> : <LandingPage />} />
               <Route path="/admin" element={<AdminRoute user={user}><AdminDashboard user={user} /></AdminRoute>} />
               <Route path="/admin-login" element={<AdminLogin user={user} />} />
               <Route path="/login" element={<LoginForm user={user} />} />

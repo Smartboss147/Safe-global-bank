@@ -21,6 +21,8 @@ import SecurityCenter from './dashboard/SecurityCenter';
 import CustomerSupport from './dashboard/CustomerSupport';
 import IRSRefund from './dashboard/IRSRefund';
 import ThemeToggle from './ThemeToggle';
+import { useNotifications } from '../context/NotificationContext';
+import MonthlyBudgetWidget from './dashboard/MonthlyBudgetWidget';
 import { 
   Menu, Bell, Eye, EyeOff, Activity, CreditCard, LayoutGrid, 
   Send, Globe, Download, HandCoins, Receipt, HelpCircle, LogOut, 
@@ -36,9 +38,8 @@ export default function Dashboard({ user }: { user: any }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [showBalance, setShowBalance] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const { notifications, unreadCount, showNotifications, setShowNotifications, markAsRead } = useNotifications();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -66,24 +67,7 @@ export default function Dashboard({ user }: { user: any }) {
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    
-    const fetchNotifications = async () => {
-      const { data } = await supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-      if (data) setNotifications(data);
-    };
-    fetchNotifications();
-    
-    const channel = supabase.channel('dashboard_notifs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` }, payload => {
-        fetchNotifications();
-      })
-      .subscribe();
-      
-    return () => { supabase.removeChannel(channel); };
 
-  }, [user]);
 
   const fetchAccount = async () => {
     if (!user) return;
@@ -191,7 +175,7 @@ export default function Dashboard({ user }: { user: any }) {
       case 'security': return <div className="p-4"><SecurityCenter user={user} userData={userData} /></div>;
       case 'settings': return <div className="p-4"><Settings user={user} userData={userData} fetchAccount={fetchAccount} /></div>;
       case 'support': return <div className="p-4"><CustomerSupport user={user} /></div>;
-      case 'stats': return <div className="p-4 space-y-6"><h2 className="text-2xl font-bold">Analytics</h2><SpendingChart /></div>;
+      case 'stats': return <div className="p-4 space-y-6"><h2 className="text-2xl font-bold">Analytics & Budgets</h2><SpendingChart /><MonthlyBudgetWidget user={user} account={account} /></div>;
       case 'history': return <div className="p-4"><TransactionHistory user={user} /></div>;
       default: return <HomeView account={account} accountId={accountId} showBalance={showBalance} setShowBalance={setShowBalance} userData={userData} currentTime={currentTime} greeting={greeting()} user={user} fetchAccount={fetchAccount} setActiveTab={setActiveTab} />;
     }
