@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from './lib/supabase';
 import Dashboard from './components/Dashboard';
 import LoginForm from './components/LoginForm';
@@ -17,6 +17,45 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const handleLogoutDueToInactivity = useCallback(async () => {
+    try {
+      localStorage.removeItem('safe_bank_demo_session');
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error('Logout error:', e);
+    }
+    window.location.href = '/login';
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let inactivityTimer: any;
+
+    const resetTimer = () => {
+      clearTimeout(inactivityTimer);
+      // 20 minutes in milliseconds = 20 * 60 * 1000 = 1,200,000 ms
+      inactivityTimer = setTimeout(() => {
+        console.log('[Inactivity] User inactive for 20 minutes. Logging out...');
+        handleLogoutDueToInactivity();
+      }, 1200000);
+    };
+
+    const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
+    events.forEach(event => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    resetTimer();
+
+    return () => {
+      clearTimeout(inactivityTimer);
+      events.forEach(event => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, [user, handleLogoutDueToInactivity]);
 
   useEffect(() => {
     try {
@@ -118,4 +157,3 @@ export default function App() {
     </ThemeProvider>
   );
 }
-

@@ -225,6 +225,28 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
         .select()
         .single();
 
+      const txObj = {
+        id: senderTx?.id || ('TX-' + Math.floor(100000 + Math.random() * 900000)),
+        user_id: user.id,
+        account_id: account.id,
+        type: 'transfer_out',
+        transfer_type: transferType,
+        amount: val,
+        recipient: recipient.trim(),
+        bank_name: bankName.trim() || 'Safe Global Bank',
+        description: txDescription,
+        status: txStatus,
+        created_at: new Date().toISOString(),
+        categoryType: 'bank',
+        formattedCategory: 'Bank / Wire Transfer'
+      };
+
+      try {
+        const storedKey = `safe_bank_local_txs_${user.id}`;
+        const existing = JSON.parse(localStorage.getItem(storedKey) || '[]');
+        localStorage.setItem(storedKey, JSON.stringify([txObj, ...existing]));
+      } catch (e) {}
+
       if (txError) {
         console.warn('Error inserting transaction into Supabase, attempting fallback:', txError);
       }

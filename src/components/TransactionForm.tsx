@@ -24,25 +24,37 @@ export default function TransactionForm({ user, accountId, type, onSuccess, curr
       return;
     }
 
-    // Create transaction
-    
-    const { data: insertedTx } = await supabase.from('transactions').insert([{
+    // Create transaction object
+    const newTx = {
+      id: 'TX-' + Math.floor(100000 + Math.random() * 900000),
       user_id: user.id,
       account_id: accountId,
       type,
       amount: val,
       description,
-      status: 'completed'
-    }]);
+      status: 'completed',
+      created_at: new Date().toISOString(),
+      categoryType: 'bank',
+      formattedCategory: type === 'deposit' ? 'Bank / Fiat Deposit' : 'Bank / Wire Transfer'
+    };
 
+    try {
+      await supabase.from('transactions').insert([newTx]);
+    } catch (e) {}
+
+    try {
+      const storedKey = `safe_bank_local_txs_${user.id}`;
+      const existing = JSON.parse(localStorage.getItem(storedKey) || '[]');
+      localStorage.setItem(storedKey, JSON.stringify([newTx, ...existing]));
+    } catch (e) {}
 
     // Update account balance
-    
-    const { data: currAcc } = await supabase.from('accounts').select('balance').eq('id', accountId).single();
-    if(currAcc) {
-      await supabase.from('accounts').update({ balance: currAcc.balance + (type === 'deposit' ? val : -val) }).eq('id', accountId);
-    }
-
+    try {
+      const { data: currAcc } = await supabase.from('accounts').select('balance').eq('id', accountId).single();
+      if(currAcc) {
+        await supabase.from('accounts').update({ balance: currAcc.balance + (type === 'deposit' ? val : -val) }).eq('id', accountId);
+      }
+    } catch (e) {}
 
     setAmount('');
     setDescription('');
