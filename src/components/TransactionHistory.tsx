@@ -13,11 +13,11 @@ import {
   TrendingDown, 
   Calendar,
   DollarSign,
-  Coins,
   ShieldCheck,
   X,
   CheckCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  AlertCircle
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -31,10 +31,14 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   // Filtering & Search states
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'bank' | 'crypto' | 'deposits' | 'withdrawals'>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'highest'>('newest');
   const [downloading, setDownloading] = useState(false);
   const [selectedAuditTx, setSelectedAuditTx] = useState<any | null>(null);
@@ -44,144 +48,118 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
 
     if (isRefresh) setRefreshing(true);
     else setLoading(true);
+    setErrorMessage(null);
 
     try {
-      // 1. Fetch Fiat / Bank transactions from Supabase
-      let bankQuery = supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+      let query = supabase
+        .from('transaction_history_audit_log')
+        .select('entry_id, entry_category, source_table, transaction_type, amount, currency, status, narration, reference, balance_after, occurred_at, details')
+        .order('occurred_at', { ascending: false });
 
       if (limit) {
-        bankQuery = bankQuery.limit(limit);
+        query = query.limit(limit);
+      } else {
+        query = query.limit(100);
       }
 
-      const { data: bankData } = await bankQuery;
+      const { data, error: queryError } = await query;
 
-      // 2. Fetch Crypto transactions from Supabase
-      let cryptoQuery = supabase
-        .from('crypto_transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
-      if (limit) {
-        cryptoQuery = cryptoQuery.limit(limit);
+      if (queryError) {
+        throw queryError;
       }
 
-      const { data: cryptoData } = await cryptoQuery;
-
-      // 3. Get local storage saved transactions
+      // Also load local storage transactions/credits for instant sync
       let localTxs = [];
       try {
         const stored = localStorage.getItem(`safe_bank_local_txs_${user.id}`);
         if (stored) localTxs = JSON.parse(stored);
       } catch (e) {}
 
-      const normalizedBank = (bankData || []).map((t: any) => ({
-        ...t,
-        categoryType: 'bank',
-        formattedCategory: t.formattedCategory || (t.type === 'deposit' ? 'Bank / Fiat Deposit' : t.type === 'transfer_out' ? 'Bank / Wire Transfer' : 'Bank / Fiat Transfer')
-      }));
-
-      const normalizedCrypto = (cryptoData || []).map((c: any) => {
-        const isDep = c.type === 'deposit' || c.type === 'incoming';
+      const normalizedView = (data || []).map((row: any) => {
+        const type = (row.transaction_type || row.entry_category || 'transaction').toLowerCase();
+        const cat = (row.entry_category || '').toLowerCase();
+        const isDep = type.includes('deposit') || type.includes('credit') || type.includes('in') || type.includes('receive') || type.includes('topup') || type.includes('add') || cat.includes('deposit') || cat.includes('credit');
+        
         return {
-          id: c.id,
-          user_id: c.user_id,
-          amount: c.amount,
+          id: row.entry_id || row.reference || `TX-${Math.random().toString(36).substring(2, 9)}`,
+          entry_id: row.entry_id,
+          entry_category: row.entry_category || 'General',
+          source_table: row.source_table || 'transactions',
           type: isDep ? 'deposit' : 'withdrawal',
-          status: c.status || 'completed',
-          description: `Crypto ${isDep ? 'Deposit' : 'Transfer Out'} (${c.asset || 'BTC'}) ${c.network ? 'via ' + c.network : ''}`,
-          created_at: c.created_at,
-          categoryType: 'crypto',
-          asset: c.asset,
-          network: c.network,
-          address: c.address,
-          formattedCategory: 'Crypto Wallet Transfer'
+          transaction_type: row.transaction_type || 'Credit',
+          amount: row.amount !== null && row.amount !== undefined ? Number(row.amount) : null,
+          currency: row.currency || user?.currency_code || 'USD',
+          status: row.status || 'completed',
+          description: row.narration || row.transaction_type || row.entry_category || 'Account Credit',
+          narration: row.narration || row.transaction_type || 'Account Credit',
+          reference: row.reference,
+          balance_after: row.balance_after,
+          created_at: row.occurred_at || new Date().toISOString(),
+          occurred_at: row.occurred_at,
+          details: row.details,
+          categoryType: cat.includes('crypto') ? 'crypto' : 'bank',
+          formattedCategory: row.entry_category || 'Account Ledger'
         };
       });
 
-      const defaultFallback = [
-        {
-          id: 'TX-984210',
-          user_id: user.id,
-          amount: 15000.00,
-          type: 'deposit',
-          status: 'completed',
-          description: 'Initial Government-Affiliated Institutional Deposit',
-          created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-          categoryType: 'bank',
-          formattedCategory: 'Bank / Fiat Deposit'
-        },
-        {
-          id: 'TX-984211',
-          user_id: user.id,
-          amount: 5250.00,
-          type: 'deposit',
-          status: 'completed',
-          description: 'Secure Direct Treasury Transfer',
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          categoryType: 'bank',
-          formattedCategory: 'Bank / Treasury Credit'
-        },
-        {
-          id: 'TX-984212',
-          user_id: user.id,
-          amount: 450.00,
-          type: 'withdrawal',
-          status: 'completed',
-          description: 'Global Wire Transfer - Recipient',
-          created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
-          categoryType: 'bank',
-          formattedCategory: 'Bank / Wire Transfer'
-        },
-        {
-          id: 'TX-984213',
-          user_id: user.id,
-          amount: 2500.00,
-          type: 'deposit',
-          status: 'completed',
-          description: 'Business Revenue Settlement',
-          created_at: new Date(Date.now() - 1800000).toISOString(),
-          categoryType: 'bank',
-          formattedCategory: 'Bank / Fiat Deposit'
-        }
-      ];
+      const normalizedLocal = localTxs.map((l: any) => ({
+        id: l.id || `LOCAL-${Math.random()}`,
+        entry_id: l.id,
+        entry_category: l.formattedCategory || 'Bank / Fiat Deposit',
+        source_table: 'local_storage',
+        type: l.type || 'deposit',
+        transaction_type: l.type || 'deposit',
+        amount: Number(l.amount || 0),
+        currency: user?.currency_code || 'USD',
+        status: l.status || 'completed',
+        description: l.description || 'Account Deposit / Credit',
+        narration: l.description || 'Account Deposit / Credit',
+        reference: l.id,
+        balance_after: null,
+        created_at: l.created_at || new Date().toISOString(),
+        occurred_at: l.created_at || new Date().toISOString(),
+        details: l,
+        categoryType: 'bank',
+        formattedCategory: 'Bank / Fiat Deposit'
+      }));
 
-      const combined = [...normalizedBank, ...normalizedCrypto, ...localTxs];
-      const finalTxs = combined.length > 0 ? combined : defaultFallback;
+      const combined = [...normalizedView, ...normalizedLocal];
+      // Deduplicate by reference or id
+      const unique = Array.from(new Map(combined.map(item => [item.id || item.reference, item])).values());
+      unique.sort((a, b) => new Date(b.occurred_at || b.created_at || 0).getTime() - new Date(a.occurred_at || a.created_at || 0).getTime());
 
-      finalTxs.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-
-      setTransactions(finalTxs);
+      setTransactions(unique);
     } catch (err: any) {
-      console.error('Error loading transactions:', err);
-      setTransactions([
-        {
-          id: 'TX-984210',
-          user_id: user.id,
-          amount: 15000.00,
-          type: 'deposit',
-          status: 'completed',
-          description: 'Initial Government-Affiliated Institutional Deposit',
-          created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-          categoryType: 'bank',
-          formattedCategory: 'Bank / Fiat Deposit'
-        },
-        {
-          id: 'TX-984211',
-          user_id: user.id,
-          amount: 5250.00,
-          type: 'deposit',
-          status: 'completed',
-          description: 'Secure Direct Treasury Transfer',
-          created_at: new Date(Date.now() - 86400000).toISOString(),
-          categoryType: 'bank',
-          formattedCategory: 'Bank / Treasury Credit'
-        }
-      ]);
+      console.error('Error loading transaction history audit log:', err);
+      setErrorMessage(err.message || 'Failed to load transaction history audit log.');
+      
+      // Fallback to local storage if view query fails
+      let localTxs = [];
+      try {
+        const stored = localStorage.getItem(`safe_bank_local_txs_${user.id}`);
+        if (stored) localTxs = JSON.parse(stored);
+      } catch (e) {}
+      
+      setTransactions(localTxs.map((l: any) => ({
+        id: l.id || `LOCAL-${Math.random()}`,
+        entry_id: l.id,
+        entry_category: l.formattedCategory || 'Bank / Fiat Deposit',
+        source_table: 'local_storage',
+        type: l.type || 'deposit',
+        transaction_type: l.type || 'deposit',
+        amount: Number(l.amount || 0),
+        currency: user?.currency_code || 'USD',
+        status: l.status || 'completed',
+        description: l.description || 'Account Deposit / Credit',
+        narration: l.description || 'Account Deposit / Credit',
+        reference: l.id,
+        balance_after: null,
+        created_at: l.created_at || new Date().toISOString(),
+        occurred_at: l.created_at || new Date().toISOString(),
+        details: l,
+        categoryType: 'bank',
+        formattedCategory: 'Bank / Fiat Deposit'
+      })));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -192,72 +170,91 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
     fetchTransactions();
 
     if (user?.id) {
-      const channel1 = supabase
-        .channel(`public:transactions:user_id=eq.${user.id}`)
+      const channel = supabase
+        .channel(`public:transaction_history_audit_log:${user.id}`)
         .on(
           'postgres_changes',
-          { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` },
+          { event: '*', schema: 'public', table: 'transactions' },
           () => fetchTransactions(true)
         )
         .subscribe();
 
-      const channel2 = supabase
-        .channel(`public:crypto_transactions:user_id=eq.${user.id}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'crypto_transactions', filter: `user_id=eq.${user.id}` },
-          () => fetchTransactions(true)
-        )
-        .subscribe();
+      const handleSync = () => fetchTransactions(true);
+      window.addEventListener('user_registered_or_updated', handleSync);
 
       return () => {
-        supabase.removeChannel(channel1);
-        supabase.removeChannel(channel2);
+        supabase.removeChannel(channel);
+        window.removeEventListener('user_registered_or_updated', handleSync);
       };
     }
   }, [fetchTransactions, user?.id]);
 
+  // Unique categories for filter dropdown
+  const uniqueCategories = Array.from(new Set(transactions.map(t => t.entry_category).filter(Boolean)));
+
+  const isCreditType = (type?: string, category?: string) => {
+    const t = (type || '').toLowerCase();
+    const c = (category || '').toLowerCase();
+    return t.includes('deposit') || t.includes('credit') || t.includes('in') || t.includes('receive') || t.includes('topup') || t.includes('add') || c.includes('deposit') || c.includes('credit');
+  };
+
   // Derived calculations
   const totalDeposits = transactions
-    .filter(t => t.type === 'deposit' || t.type === 'transfer_in' || t.type === 'credit')
+    .filter(t => isCreditType(t.transaction_type || t.type, t.entry_category))
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   const totalWithdrawals = transactions
-    .filter(t => t.type === 'withdrawal' || t.type === 'transfer_out' || t.type === 'debit' || t.type === 'transfer' || t.type === 'payment')
+    .filter(t => !isCreditType(t.transaction_type || t.type, t.entry_category))
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   // Filter transactions
   const filteredTransactions = transactions
     .filter(t => {
-      const isDeposit = t.type === 'deposit' || t.type === 'transfer_in' || t.type === 'credit';
-      const isWithdrawal = t.type === 'withdrawal' || t.type === 'transfer_out' || t.type === 'debit' || t.type === 'transfer' || t.type === 'payment';
+      const isDeposit = isCreditType(t.transaction_type || t.type, t.entry_category);
+      const isWithdrawal = !isDeposit;
 
       if (activeTab === 'bank' && t.categoryType !== 'bank') return false;
       if (activeTab === 'crypto' && t.categoryType !== 'crypto') return false;
       if (activeTab === 'deposits' && !isDeposit) return false;
       if (activeTab === 'withdrawals' && !isWithdrawal) return false;
 
+      // Category filter
+      if (selectedCategory !== 'all' && t.entry_category !== selectedCategory) {
+        return false;
+      }
+
+      // Date range filter
+      const tDate = new Date(t.occurred_at || t.created_at).getTime();
+      if (startDate) {
+        const start = new Date(startDate).getTime();
+        if (!isNaN(start) && tDate < start) return false;
+      }
+      if (endDate) {
+        const end = new Date(endDate + 'T23:59:59').getTime();
+        if (!isNaN(end) && tDate > end) return false;
+      }
+
       if (searchTerm.trim()) {
         const query = searchTerm.toLowerCase();
         const descMatch = (t.description || '').toLowerCase().includes(query);
-        const typeMatch = (t.type || '').toLowerCase().includes(query);
+        const typeMatch = (t.transaction_type || '').toLowerCase().includes(query);
         const amountMatch = (t.amount || '').toString().includes(query);
         const statusMatch = (t.status || '').toLowerCase().includes(query);
-        const assetMatch = (t.asset || '').toLowerCase().includes(query);
-        const refMatch = (t.id || '').toLowerCase().includes(query);
-        return descMatch || typeMatch || amountMatch || statusMatch || assetMatch || refMatch;
+        const catMatch = (t.entry_category || '').toLowerCase().includes(query);
+        const refMatch = (t.reference || t.entry_id || '').toLowerCase().includes(query);
+        return descMatch || typeMatch || amountMatch || statusMatch || catMatch || refMatch;
       }
 
       return true;
     })
     .sort((a, b) => {
       if (sortBy === 'oldest') {
-        return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        return new Date(a.occurred_at || a.created_at || 0).getTime() - new Date(b.occurred_at || b.created_at || 0).getTime();
       }
       if (sortBy === 'highest') {
         return Number(b.amount || 0) - Number(a.amount || 0);
       }
-      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+      return new Date(b.occurred_at || b.created_at || 0).getTime() - new Date(a.occurred_at || a.created_at || 0).getTime();
     });
 
   const handleDownloadStatement = (monthName: string, monthIndex: number, year: number) => {
@@ -266,13 +263,14 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
       const doc = new jsPDF();
 
       const statementTransactions = transactions.filter(t => {
-        if (!t.created_at) return false;
-        const date = new Date(t.created_at);
+        const dt = t.occurred_at || t.created_at;
+        if (!dt) return false;
+        const date = new Date(dt);
         return date.getMonth() === monthIndex && date.getFullYear() === year;
       });
 
       doc.setFontSize(20);
-      doc.text(`Monthly Statement - ${monthName} ${year}`, 14, 22);
+      doc.text(`Audit Statement - ${monthName} ${year}`, 14, 22);
 
       doc.setFontSize(10);
       doc.text(`Account Holder ID: ${user?.id || 'N/A'}`, 14, 30);
@@ -280,27 +278,27 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
 
       if (statementTransactions.length === 0) {
         doc.setFontSize(12);
-        doc.text("No transactions recorded for this billing period.", 14, 48);
+        doc.text("No audit records recorded for this billing period.", 14, 48);
       } else {
         const userCurr = user?.currency_code || user?.currency || user?.country || 'USD';
         const tableData = statementTransactions.map(t => [
-          new Date(t.created_at).toLocaleDateString() + ' ' + new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          t.description || 'General Transaction',
-          (t.type || '').toUpperCase(),
+          new Date(t.occurred_at || t.created_at).toLocaleDateString() + ' ' + new Date(t.occurred_at || t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          t.narration || t.description || 'Audit Entry',
+          (t.transaction_type || '').toUpperCase(),
           (t.status || 'completed').toUpperCase(),
-          `${t.type === 'deposit' || t.type === 'transfer_in' || t.type === 'credit' ? '+' : '-'}${formatCurrencyAmount(t.amount, userCurr)}`
+          t.amount !== null ? `${isCreditType(t.transaction_type, t.entry_category) ? '+' : '-'}${t.amount} ${t.currency || userCurr}` : 'N/A'
         ]);
 
         autoTable(doc, {
           startY: 44,
-          head: [['Date & Time', 'Description', 'Type', 'Status', 'Amount']],
+          head: [['Date & Time', 'Narration / Description', 'Type', 'Status', 'Amount']],
           body: tableData,
           headStyles: { fillColor: [10, 61, 54] },
           styles: { fontSize: 9 }
         });
       }
 
-      doc.save(`Statement_${monthName}_${year}.pdf`);
+      doc.save(`Audit_Statement_${monthName}_${year}.pdf`);
     } catch (err) {
       console.error("Error generating statement PDF:", err);
       alert("Unable to download PDF statement. Please try again.");
@@ -311,31 +309,32 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
 
   const handleExportCSV = () => {
     if (filteredTransactions.length === 0) return;
-    const userCurr = user?.currency_code || user?.currency || user?.country || 'USD';
-    const headers = ['Reference ID', 'Date', 'Type', 'Category', 'Description', 'Asset/Currency', 'Amount', 'Status'];
+    const headers = ['Entry ID', 'Category', 'Source Table', 'Type', 'Amount', 'Currency', 'Status', 'Narration', 'Reference', 'Occurred At'];
     const rows = filteredTransactions.map(t => [
-      t.id || 'N/A',
-      t.created_at ? new Date(t.created_at).toISOString() : '',
-      t.type || 'transaction',
-      t.formattedCategory || 'General',
-      `"${(t.description || '').replace(/"/g, '""')}"`,
-      t.asset || userCurr,
-      t.amount || 0,
-      t.status || 'completed'
+      t.entry_id || 'N/A',
+      t.entry_category || '',
+      t.source_table || '',
+      t.transaction_type || '',
+      t.amount !== null ? t.amount : '',
+      t.currency || '',
+      t.status || '',
+      `"${(t.narration || t.description || '').replace(/"/g, '""')}"`,
+      t.reference || '',
+      t.occurred_at || t.created_at ? new Date(t.occurred_at || t.created_at).toISOString() : ''
     ]);
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Account_Transactions_Audit_${new Date().toISOString().slice(0,10)}.csv`);
+    link.setAttribute('download', `Transaction_History_Audit_Log_${new Date().toISOString().slice(0,10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const formatDate = (dateStr?: string) => {
-    if (!dateStr) return 'Just now';
+    if (!dateStr) return 'Recently';
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return 'Recently';
@@ -351,11 +350,6 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
     }
   };
 
-  const isCreditType = (type?: string) => {
-    const t = (type || '').toLowerCase();
-    return t === 'deposit' || t === 'transfer_in' || t === 'credit';
-  };
-
   return (
     <div className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-xl border border-gray-100/80 space-y-6">
       {/* Header Bar */}
@@ -365,7 +359,6 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
             <ShieldCheck className="text-[#0A3D36]" size={26} />
             <span>Transaction History &amp; Audit Log</span>
           </h2>
-          <p className="text-xs text-gray-500 font-medium mt-0.5">Real-time database ledger of bank transfers, crypto movements &amp; account credits</p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap self-end sm:self-auto">
@@ -398,11 +391,22 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         </div>
       </div>
 
+      {/* Error Message State */}
+      {errorMessage && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-sm">
+          <AlertCircle size={20} className="shrink-0 text-rose-600" />
+          <div>
+            <p className="font-bold">Notice</p>
+            <p className="text-xs mt-0.5 text-rose-700">{errorMessage}</p>
+          </div>
+        </div>
+      )}
+
       {/* Summary Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-emerald-50/70 border border-emerald-100/80 p-4 rounded-2xl flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Total Deposits</p>
+            <p className="text-xs font-bold text-emerald-800 uppercase tracking-wider">Total Credits</p>
             <p className="text-xl font-black text-emerald-900 mt-1">
               {formatCurrencyAmount(totalDeposits, user?.currency_code || user?.currency || user?.country)}
             </p>
@@ -414,7 +418,7 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
 
         <div className="bg-rose-50/70 border border-rose-100/80 p-4 rounded-2xl flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-rose-800 uppercase tracking-wider">Total Withdrawals</p>
+            <p className="text-xs font-bold text-rose-800 uppercase tracking-wider">Total Debits</p>
             <p className="text-xl font-black text-rose-900 mt-1">
               {formatCurrencyAmount(totalWithdrawals, user?.currency_code || user?.currency || user?.country)}
             </p>
@@ -426,8 +430,8 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
 
         <div className="bg-slate-50 border border-slate-200/80 p-4 rounded-2xl flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Database Records</p>
-            <p className="text-xl font-black text-slate-900 mt-1">{transactions.length} items</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Audit Records</p>
+            <p className="text-xl font-black text-slate-900 mt-1">{transactions.length} entries</p>
           </div>
           <div className="w-10 h-10 rounded-xl bg-slate-900 text-white flex items-center justify-center shadow-md">
             <DollarSign size={20} />
@@ -457,76 +461,128 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
               </div>
               <div className="truncate">
                 <p className="font-bold text-xs text-gray-900">{item.month} {item.year}</p>
-                <p className="text-[11px] text-gray-500">PDF Monthly Record</p>
+                <p className="text-[11px] text-gray-500">PDF Audit Statement</p>
               </div>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Filter Tabs & Search Controls */}
-      <div className="flex flex-col md:flex-row gap-3 justify-between items-center bg-gray-50/80 p-2 rounded-2xl border border-gray-100">
-        {/* Filter Tabs */}
-        <div className="flex p-1 bg-white rounded-xl shadow-xs border border-gray-200/60 w-full md:w-auto overflow-x-auto hide-scrollbar">
-          <button 
-            onClick={() => setActiveTab('all')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'all' ? 'bg-[#0A3D36] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            All Activity
-          </button>
-          <button 
-            onClick={() => setActiveTab('bank')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'bank' ? 'bg-[#0A3D36] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Bank / Fiat
-          </button>
-          <button 
-            onClick={() => setActiveTab('crypto')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'crypto' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Crypto
-          </button>
-          <button 
-            onClick={() => setActiveTab('deposits')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'deposits' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Deposits
-          </button>
-          <button 
-            onClick={() => setActiveTab('withdrawals')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'withdrawals' ? 'bg-rose-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-          >
-            Withdrawals
-          </button>
+      {/* Search, Category & Date Range Filter Bar */}
+      <div className="bg-gray-50/80 p-4 rounded-2xl border border-gray-100 space-y-3">
+        <div className="flex flex-col md:flex-row gap-3 justify-between items-center">
+          {/* Filter Tabs */}
+          <div className="flex p-1 bg-white rounded-xl shadow-xs border border-gray-200/60 w-full md:w-auto overflow-x-auto hide-scrollbar">
+            <button 
+              onClick={() => setActiveTab('all')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'all' ? 'bg-[#0A3D36] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              All Entries
+            </button>
+            <button 
+              onClick={() => setActiveTab('bank')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'bank' ? 'bg-[#0A3D36] text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Bank / Fiat
+            </button>
+            <button 
+              onClick={() => setActiveTab('crypto')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'crypto' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Crypto
+            </button>
+            <button 
+              onClick={() => setActiveTab('deposits')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'deposits' ? 'bg-emerald-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Credits
+            </button>
+            <button 
+              onClick={() => setActiveTab('withdrawals')}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition shrink-0 ${activeTab === 'withdrawals' ? 'bg-rose-600 text-white shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+            >
+              Debits
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+            <div className="relative flex-1 md:w-56">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Search narration, ref..." 
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#0A3D36] outline-none"
+              />
+            </div>
+
+            <select 
+              value={sortBy} 
+              onChange={(e: any) => setSortBy(e.target.value)}
+              className="py-2 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-[#0A3D36]"
+            >
+              <option value="newest">Newest First</option>
+              <option value="oldest">Oldest First</option>
+              <option value="highest">Highest Amount</option>
+            </select>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 w-full md:w-auto">
-          {/* Search Box */}
-          <div className="relative flex-1 md:w-64">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+        {/* Category & Date Range Filter Row */}
+        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-gray-200/60 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">Category:</span>
+            <select
+              value={selectedCategory}
+              onChange={e => setSelectedCategory(e.target.value)}
+              className="py-1.5 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-[#0A3D36]"
+            >
+              <option value="all">All Categories</option>
+              {uniqueCategories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">From:</span>
             <input 
-              type="text" 
-              placeholder="Search ref, desc, asset, amount..." 
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-[#0A3D36] outline-none"
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="py-1.5 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-[#0A3D36]"
             />
           </div>
 
-          {/* Sort Select */}
-          <select 
-            value={sortBy} 
-            onChange={(e: any) => setSortBy(e.target.value)}
-            className="py-2 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-[#0A3D36]"
-          >
-            <option value="newest">Newest First</option>
-            <option value="oldest">Oldest First</option>
-            <option value="highest">Highest Amount</option>
-          </select>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">To:</span>
+            <input 
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+              className="py-1.5 px-3 bg-white border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 outline-none focus:ring-2 focus:ring-[#0A3D36]"
+            />
+          </div>
+
+          {(selectedCategory !== 'all' || startDate || endDate || searchTerm || activeTab !== 'all') && (
+            <button
+              onClick={() => {
+                setSelectedCategory('all');
+                setStartDate('');
+                setEndDate('');
+                setSearchTerm('');
+                setActiveTab('all');
+              }}
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 underline ml-auto"
+            >
+              Reset Filters
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Transactions List */}
+      {/* Transactions / Audit Log List */}
       <div className="space-y-3">
         {loading ? (
           <div className="space-y-3 py-4">
@@ -537,46 +593,45 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         ) : filteredTransactions.length === 0 ? (
           <div className="text-center py-12 bg-gray-50/50 rounded-2xl border border-dashed border-gray-200">
             <Filter className="mx-auto text-gray-300 mb-2" size={32} />
-            <p className="font-bold text-gray-700 text-sm">No transactions found</p>
+            <p className="font-bold text-gray-700 text-sm">No audit log entries found</p>
             <p className="text-xs text-gray-400 mt-1">
-              {searchTerm ? 'Try adjusting your search criteria or active filter tab.' : 'Your account has no recorded transactions in the database.'}
+              {searchTerm || selectedCategory !== 'all' || startDate || endDate ? 'Try adjusting your search criteria, category filter, or date range.' : 'No audit records recorded yet.'}
             </p>
           </div>
         ) : (
           filteredTransactions.map(t => {
-            const isCredit = isCreditType(t.type);
+            const isCredit = isCreditType(t.transaction_type || t.type, t.entry_category);
             const status = (t.status || 'completed').toLowerCase();
-            const isCrypto = t.categoryType === 'crypto';
+            const hasAmount = t.amount !== null && t.amount !== undefined && !isNaN(Number(t.amount));
+            const displayNarration = t.narration || t.description || 'Deposit / Credit';
 
             return (
               <div 
-                key={t.id || Math.random()} 
+                key={t.id} 
                 onClick={() => setSelectedAuditTx(t)}
                 className="flex items-center justify-between p-4 bg-gray-50/60 hover:bg-gray-100/80 border border-gray-100/80 hover:border-gray-300/80 rounded-2xl transition-all duration-150 cursor-pointer group"
               >
                 <div className="flex items-center gap-3.5 min-w-0">
                   <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 font-bold ${
-                    isCrypto 
-                      ? 'bg-blue-100/80 text-blue-700 shadow-xs' 
-                      : isCredit 
-                        ? 'bg-emerald-100/80 text-emerald-700 shadow-xs' 
-                        : 'bg-rose-100/80 text-rose-700 shadow-xs'
+                    isCredit 
+                      ? 'bg-emerald-100/80 text-emerald-700 shadow-xs' 
+                      : 'bg-rose-100/80 text-rose-700 shadow-xs'
                   }`}>
-                    {isCrypto ? <Coins size={20} /> : isCredit ? <ArrowDownLeft size={20} /> : <ArrowUpRight size={20} />}
+                    {isCredit ? <ArrowDownLeft size={20} /> : <ArrowUpRight size={20} />}
                   </div>
 
                   <div className="min-w-0">
                     <p className="font-bold text-gray-900 text-sm truncate group-hover:text-[#0A3D36] transition-colors">
-                      {t.description || (isCredit ? 'Deposit / Transfer In' : 'Withdrawal / Payment')}
+                      {displayNarration}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500 flex-wrap">
-                      <span className="capitalize font-semibold text-gray-700">{t.formattedCategory || t.type}</span>
+                      <span className="capitalize font-semibold text-gray-700">{isCredit ? 'Credit' : 'Debit'}</span>
                       <span>•</span>
-                      <span>{formatDate(t.created_at)}</span>
-                      {t.id && (
+                      <span>{formatDate(t.occurred_at || t.created_at)}</span>
+                      {t.reference && (
                         <>
                           <span>•</span>
-                          <span className="font-mono text-[10px] text-gray-400 truncate max-w-[100px]">Ref: {t.id}</span>
+                          <span className="font-mono text-[10px] text-gray-400 truncate max-w-[120px]">Ref: {t.reference}</span>
                         </>
                       )}
                     </div>
@@ -584,18 +639,22 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
                 </div>
 
                 <div className="text-right shrink-0 ml-4">
-                  <span className={`font-bold text-base sm:text-lg tracking-tight ${isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
-                    {isCredit ? '+' : '-'}{isCrypto && t.asset ? `${t.amount} ${t.asset}` : formatCurrencyAmount(t.amount, user?.currency_code || user?.currency || user?.country)}
-                  </span>
-                  <div className="mt-0.5">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                      status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
-                      status === 'pending' ? 'bg-amber-100 text-amber-800' :
-                      'bg-rose-100 text-rose-800'
-                    }`}>
-                      {status}
+                  {hasAmount && (
+                    <span className={`font-bold text-base sm:text-lg tracking-tight ${isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
+                      {isCredit ? '+' : '-'}{formatCurrencyAmount(t.amount, t.currency || user?.currency_code || user?.currency || user?.country)}
                     </span>
-                  </div>
+                  )}
+                  {status && (
+                    <div className="mt-0.5">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                        status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                        status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                        'bg-rose-100 text-rose-800'
+                      }`}>
+                        {status}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -613,8 +672,8 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
                   <ShieldCheck size={22} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-base text-gray-900">Transaction Audit Record</h3>
-                  <p className="text-xs text-gray-500">Official Database Entry Verification</p>
+                  <h3 className="font-bold text-base text-gray-900">Audit Log Record Details</h3>
+                  <p className="text-xs text-gray-500">Verified Professional Ledger</p>
                 </div>
               </div>
               <button 
@@ -628,60 +687,50 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3 text-xs">
               <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
                 <span className="text-slate-500 font-medium">Reference ID:</span>
-                <span className="font-mono font-bold text-slate-800 select-all">{selectedAuditTx.id || 'N/A'}</span>
+                <span className="font-mono font-bold text-slate-800 select-all">{selectedAuditTx.reference || selectedAuditTx.entry_id || 'N/A'}</span>
               </div>
 
               <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
-                <span className="text-slate-500 font-medium">Date &amp; Timestamp:</span>
-                <span className="font-bold text-slate-800">{formatDate(selectedAuditTx.created_at)}</span>
+                <span className="text-slate-500 font-medium">Narration:</span>
+                <span className="font-bold text-slate-800">{selectedAuditTx.narration || selectedAuditTx.description}</span>
               </div>
 
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
-                <span className="text-slate-500 font-medium">Transaction Type:</span>
-                <span className="font-bold text-slate-800 capitalize">{selectedAuditTx.type}</span>
-              </div>
-
-              <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
-                <span className="text-slate-500 font-medium">Category / Source:</span>
-                <span className="font-bold text-slate-800">{selectedAuditTx.formattedCategory || 'Account Activity'}</span>
-              </div>
-
-              {selectedAuditTx.network && (
+              {selectedAuditTx.balance_after !== null && selectedAuditTx.balance_after !== undefined && (
                 <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
-                  <span className="text-slate-500 font-medium">Blockchain Network:</span>
-                  <span className="font-bold text-blue-700">{selectedAuditTx.network}</span>
+                  <span className="text-slate-500 font-medium">Balance After:</span>
+                  <span className="font-bold text-slate-800">{formatCurrencyAmount(selectedAuditTx.balance_after, selectedAuditTx.currency || user?.currency_code)}</span>
                 </div>
               )}
 
-              {selectedAuditTx.address && (
-                <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
-                  <span className="text-slate-500 font-medium">Destination Address:</span>
-                  <span className="font-mono text-[11px] text-slate-800 truncate max-w-[200px] select-all">{selectedAuditTx.address}</span>
+              <div className="flex justify-between items-center pb-2 border-b border-slate-200/60">
+                <span className="text-slate-500 font-medium">Occurred At:</span>
+                <span className="font-bold text-slate-800">{formatDate(selectedAuditTx.occurred_at || selectedAuditTx.created_at)}</span>
+              </div>
+
+              {selectedAuditTx.status && (
+                <div className="flex justify-between items-center pt-1">
+                  <span className="text-slate-500 font-medium">Status:</span>
+                  <span className="inline-flex items-center gap-1 font-extrabold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full uppercase text-[10px]">
+                    <CheckCircle size={12} /> {selectedAuditTx.status}
+                  </span>
                 </div>
               )}
+            </div>
 
-              <div className="flex justify-between items-center pt-1">
-                <span className="text-slate-500 font-medium">Audit Status:</span>
-                <span className="inline-flex items-center gap-1 font-extrabold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full uppercase text-[10px]">
-                  <CheckCircle size={12} /> {selectedAuditTx.status || 'Completed'}
+            {selectedAuditTx.amount !== null && selectedAuditTx.amount !== undefined && (
+              <div className="flex justify-between items-center p-3 bg-emerald-50/80 rounded-2xl border border-emerald-100">
+                <span className="text-xs font-bold text-emerald-900">Amount &amp; Type:</span>
+                <span className="text-lg font-black text-emerald-800">
+                  {isCreditType(selectedAuditTx.transaction_type, selectedAuditTx.entry_category) ? '+' : '-'}{formatCurrencyAmount(selectedAuditTx.amount, selectedAuditTx.currency || user?.currency_code || user?.currency || user?.country)}
                 </span>
               </div>
-            </div>
-
-            <div className="flex justify-between items-center p-3 bg-emerald-50/80 rounded-2xl border border-emerald-100">
-              <span className="text-xs font-bold text-emerald-900">Recorded Amount:</span>
-              <span className="text-lg font-black text-emerald-800">
-                {selectedAuditTx.categoryType === 'crypto' && selectedAuditTx.asset
-                  ? `${selectedAuditTx.amount} ${selectedAuditTx.asset}`
-                  : formatCurrencyAmount(selectedAuditTx.amount, user?.currency_code || user?.currency || user?.country)}
-              </span>
-            </div>
+            )}
 
             <button
               onClick={() => setSelectedAuditTx(null)}
               className="w-full py-3 bg-[#0A3D36] hover:bg-[#072a25] text-white font-bold text-xs rounded-xl transition shadow-md"
             >
-              Close Audit Record
+              Close Details
             </button>
           </div>
         </div>

@@ -54,7 +54,12 @@ export function NotificationProvider({ children, user }: { children: React.React
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        if (error.code !== 'PGRST205') {
+          console.warn('Notifications table note:', error.message);
+        }
+        throw error;
+      }
 
       const combined = [...(data || []), ...localNotifs];
       // Deduplicate by id
@@ -62,8 +67,8 @@ export function NotificationProvider({ children, user }: { children: React.React
       unique.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
 
       setNotifications(unique.length > 0 ? unique : defaultNotifications);
-    } catch (err) {
-      console.error('Error fetching notifications:', err);
+    } catch (err: any) {
+      // Gracefully fallback to localStorage or default notifications without printing noisy errors for missing tables
       try {
         const stored = localStorage.getItem(`safe_bank_notifications_${user.id}`);
         if (stored) {
