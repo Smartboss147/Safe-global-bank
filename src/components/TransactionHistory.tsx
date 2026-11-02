@@ -17,7 +17,8 @@ import {
   X,
   CheckCircle,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -68,11 +69,18 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         throw queryError;
       }
 
-      // Also load local storage transactions/credits for instant sync
+      // Load local storage transactions/credits
       let localTxs = [];
       try {
         const stored = localStorage.getItem(`safe_bank_local_txs_${user.id}`);
         if (stored) localTxs = JSON.parse(stored);
+      } catch (e) {}
+
+      // Load deleted IDs
+      let deletedIds = [];
+      try {
+        const storedDel = localStorage.getItem(`safe_bank_deleted_txs_${user.id}`);
+        if (storedDel) deletedIds = JSON.parse(storedDel);
       } catch (e) {}
 
       const normalizedView = (data || []).map((row: any) => {
@@ -123,7 +131,10 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         formattedCategory: 'Bank / Fiat Deposit'
       }));
 
-      const combined = [...normalizedView, ...normalizedLocal];
+      const combined = [...normalizedView, ...normalizedLocal].filter(item => 
+        !deletedIds.includes(item.id) && !deletedIds.includes(item.reference) && !deletedIds.includes(item.entry_id)
+      );
+
       // Deduplicate by reference or id
       const unique = Array.from(new Map(combined.map(item => [item.id || item.reference, item])).values());
       unique.sort((a, b) => new Date(b.occurred_at || b.created_at || 0).getTime() - new Date(a.occurred_at || a.created_at || 0).getTime());
@@ -133,14 +144,19 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
       console.error('Error loading transaction history audit log:', err);
       setErrorMessage(err.message || 'Failed to load transaction history audit log.');
       
-      // Fallback to local storage if view query fails
       let localTxs = [];
       try {
         const stored = localStorage.getItem(`safe_bank_local_txs_${user.id}`);
         if (stored) localTxs = JSON.parse(stored);
       } catch (e) {}
+
+      let deletedIds = [];
+      try {
+        const storedDel = localStorage.getItem(`safe_bank_deleted_txs_${user.id}`);
+        if (storedDel) deletedIds = JSON.parse(storedDel);
+      } catch (e) {}
       
-      setTransactions(localTxs.map((l: any) => ({
+      const fallbackList = localTxs.map((l: any) => ({
         id: l.id || `LOCAL-${Math.random()}`,
         entry_id: l.id,
         entry_category: l.formattedCategory || 'Bank / Fiat Deposit',
@@ -159,7 +175,9 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
         details: l,
         categoryType: 'bank',
         formattedCategory: 'Bank / Fiat Deposit'
-      })));
+      })).filter((item: any) => !deletedIds.includes(item.id) && !deletedIds.includes(item.reference));
+
+      setTransactions(fallbackList);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -188,6 +206,31 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
       };
     }
   }, [fetchTransactions, user?.id]);
+
+  const handleDeleteTransaction = (t: any) => {
+    if (!window.confirm('Are you sure you want to delete this transaction history entry?')) return;
+
+    const targetId = t.id || t.reference || t.entry_id;
+
+    setTransactions(prev => prev.filter(item => item.id !== targetId && item.reference !== targetId && item.entry_id !== targetId));
+
+    if (user?.id) {
+      try {
+        const storedKey = `safe_bank_local_txs_${user.id}`;
+        const existing = JSON.parse(localStorage.getItem(storedKey) || '[]');
+        const updated = existing.filter((item: any) => item.id !== targetId && item.reference !== targetId);
+        localStorage.setItem(storedKey, JSON.stringify(updated));
+      } catch (e) {}
+
+      try {
+        const deletedKey = `safe_bank_deleted_txs_${user.id}`;
+        const deletedList = JSON.parse(localStorage.getItem(deletedKey) || '[]');
+        if (!deletedList.includes(targetId)) {
+          localStorage.setItem(deletedKey, JSON.stringify([...deletedList, targetId]));
+        }
+      } catch (e) {}
+    }
+  };
 
   // Unique categories for filter dropdown
   const uniqueCategories = Array.from(new Set(transactions.map(t => t.entry_category).filter(Boolean)));
@@ -638,23 +681,36 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
                   </div>
                 </div>
 
-                <div className="text-right shrink-0 ml-4">
-                  {hasAmount && (
-                    <span className={`font-bold text-base sm:text-lg tracking-tight ${isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
-                      {isCredit ? '+' : '-'}{formatCurrencyAmount(t.amount, t.currency || user?.currency_code || user?.currency || user?.country)}
-                    </span>
-                  )}
-                  {status && (
-                    <div className="mt-0.5">
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                        status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
-                        status === 'pending' ? 'bg-amber-100 text-amber-800' :
-                        'bg-rose-100 text-rose-800'
-                      }`}>
-                        {status}
+                <div className="flex items-center gap-3 shrink-0 ml-4">
+                  <div className="text-right">
+                    {hasAmount && (
+                      <span className={`font-bold text-base sm:text-lg tracking-tight ${isCredit ? 'text-emerald-600' : 'text-gray-900'}`}>
+                        {isCredit ? '+' : '-'}{formatCurrencyAmount(t.amount, t.currency || user?.currency_code || user?.currency || user?.country)}
                       </span>
-                    </div>
-                  )}
+                    )}
+                    {status && (
+                      <div className="mt-0.5">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                          status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
+                          status === 'pending' ? 'bg-amber-100 text-amber-800' :
+                          'bg-rose-100 text-rose-800'
+                        }`}>
+                          {status}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteTransaction(t);
+                    }}
+                    title="Delete History Entry"
+                    className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition"
+                  >
+                    <Trash2 size={16} />
+                  </button>
                 </div>
               </div>
             );
@@ -726,12 +782,23 @@ export default function TransactionHistory({ user, limit }: TransactionHistoryPr
               </div>
             )}
 
-            <button
-              onClick={() => setSelectedAuditTx(null)}
-              className="w-full py-3 bg-[#0A3D36] hover:bg-[#072a25] text-white font-bold text-xs rounded-xl transition shadow-md"
-            >
-              Close Details
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  handleDeleteTransaction(selectedAuditTx);
+                  setSelectedAuditTx(null);
+                }}
+                className="flex-1 py-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 border border-rose-200"
+              >
+                <Trash2 size={14} /> Delete Entry
+              </button>
+              <button
+                onClick={() => setSelectedAuditTx(null)}
+                className="flex-1 py-3 bg-[#0A3D36] hover:bg-[#072a25] text-white font-bold text-xs rounded-xl transition shadow-md"
+              >
+                Close Details
+              </button>
+            </div>
           </div>
         </div>
       )}
