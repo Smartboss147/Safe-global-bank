@@ -113,7 +113,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
     e.preventDefault();
     setCodeError('');
     if (imfCodeInput.trim() !== '144862') {
-      setCodeError('Invalid IMF clearance code. Verification failed. Please check the code and try again.');
+      setCodeError('Invalid Fedwire clearance code. Verification failed. Please check the code and try again.');
       return;
     }
     setVerifyingCode(true);
@@ -688,7 +688,7 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
                 )}
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-gray-900 tracking-tight">
-                    {verificationStep === 1 && 'IMF Clearance Authorization'}
+                    {verificationStep === 1 && 'Fedwire (Federal Reserve Wire Network) Clearance Authorization'}
                     {verificationStep === 2 && 'Clearinghouse Gateway Intercept'}
                     {verificationStep === 3 && 'SWIFT Settlement Protocol'}
                   </h3>
@@ -727,15 +727,15 @@ export default function TransferFunds({ user, account, fetchAccount }: TransferF
               </div>
             )}
 
-            {/* STEP 1: IMF Code (Invisible) */}
+            {/* STEP 1: Fedwire Code (Invisible) */}
             {verificationStep === 1 && (
               <form onSubmit={handleVerifyStep1} className="space-y-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider">
-                    Enter IMF Clearance Code
+                    Enter Fedwire Clearance Code
                   </label>
                   <p className="text-[11px] text-gray-500 font-medium leading-relaxed">
-                    This transfer requires an authorized International Monetary Fund (IMF) clearance code to initiate ledger processing.
+                    This transfer requires an authorized Fedwire (Federal Reserve Wire Network) clearance code to initiate ledger processing.
                   </p>
                   <div className="relative mt-2">
                     <input
